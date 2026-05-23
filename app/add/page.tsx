@@ -13,6 +13,23 @@ const CATEGORIES = [
 const inputClass =
   'w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 h-[52px] placeholder:text-gray-600'
 
+const DRAFT_KEY = 'stagr-add-draft'
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function saveDraft(data: object) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)) } catch { /* noop */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY) } catch { /* noop */ }
+}
+
 export default function AddItemPage() {
   const router = useRouter()
   const { addItem } = useItems()
@@ -30,10 +47,41 @@ export default function AddItemPage() {
   const [justCaptured, setJustCaptured] = useState(false)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [draftLoaded, setDraftLoaded] = useState(false)
+
+  // Restore draft on mount
+  useEffect(() => {
+    const draft = loadDraft()
+    if (draft) {
+      if (draft.sku) setSku(draft.sku)
+      if (draft.name) setName(draft.name)
+      if (draft.category) setCategory(draft.category)
+      if (draft.status) setStatus(draft.status)
+      if (draft.photos) setPhotos(draft.photos)
+    }
+    setDraftLoaded(true)
+  }, [])
+
+  // Save draft whenever form changes (after initial load)
+  useEffect(() => {
+    if (!draftLoaded) return
+    saveDraft({ sku, name, category, status, photos })
+  }, [sku, name, category, status, photos, draftLoaded])
+
+  // When camera becomes active, attach the stream to the video element
+  useEffect(() => {
+    if (cameraActive && streamRef.current && videoRef.current) {
+      videoRef.current.srcObject = streamRef.current
+      videoRef.current.play().catch(() => {
+        setCameraError('Could not start video preview.')
+      })
+    }
+  }, [cameraActive])
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
     setCameraActive(false)
   }, [])
 
@@ -48,21 +96,19 @@ export default function AddItemPage() {
         audio: false,
       })
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-      }
-      setCameraActive(true)
+      setCameraActive(true) // useEffect above will attach stream to video element
     } catch {
-      setCameraError('Camera access was denied. Please allow camera access in your browser settings.')
+      setCameraError('Camera access was denied. Tap the camera icon in your browser address bar to allow it.')
     }
   }
 
   function capturePhoto() {
     const video = videoRef.current
-    if (!video) return
+    if (!video || video.readyState < 2) return
 
-    // Crop capture to 1:1 square from center
     const size = Math.min(video.videoWidth, video.videoHeight)
+    if (size === 0) return
+
     const canvas = document.createElement('canvas')
     canvas.width = size
     canvas.height = size
@@ -71,9 +117,8 @@ export default function AddItemPage() {
     const y = (video.videoHeight - size) / 2
     ctx.drawImage(video, x, y, size, size, 0, 0, size, size)
 
-    // Flash feedback
     setJustCaptured(true)
-    setTimeout(() => setJustCaptured(false), 150)
+    setTimeout(() => setJustCaptured(false), 120)
 
     canvas.toBlob(async blob => {
       if (!blob) return
@@ -107,6 +152,7 @@ export default function AddItemPage() {
     setError('')
     setSaving(true)
     stopCamera()
+    clearDraft()
     addItem({ sku: sku.trim(), name: name.trim(), category, status, photos })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
@@ -123,77 +169,66 @@ export default function AddItemPage() {
       )}
 
       <div className="space-y-4">
-        {/* Photos — camera first */}
+        {/* Photos */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-sm text-gray-400">Photos</label>
+            <label className="text-sm text-gray-400">Photos</label>
             {cameraActive && (
-              <button
-                type="button"
-                onClick={stopCamera}
-                className="text-xs text-gray-500 underline"
-              >
+              <button type="button" onClick={stopCamera} className="text-xs text-gray-500 underline">
                 Close camera
               </button>
             )}
           </div>
 
-          {/* Camera view */}
-          {cameraActive ? (
-            <div className="space-y-3">
-              {/* Live viewfinder — square crop shown via CSS */}
-              <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-black">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover transition-opacity duration-75 ${justCaptured ? 'opacity-0' : 'opacity-100'}`}
-                />
-                {uploading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <span className="text-white text-sm">Uploading...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Thumbnails + shutter row */}
-              <div className="flex items-center gap-3">
-                {/* Captured thumbnails */}
-                <div className="flex gap-2 overflow-x-auto flex-1 pb-1">
-                  {photos.map(photo => (
-                    <div key={photo.publicId} className="relative shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photo.url} alt="" className="w-14 h-14 object-cover rounded-lg" />
-                      <button
-                        type="button"
-                        onClick={() => removePhoto(photo)}
-                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
+          {/* Video element — always in DOM so ref is ready when stream arrives */}
+          <div className={cameraActive ? 'space-y-3' : 'hidden'}>
+            <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-black">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className={`w-full h-full object-cover transition-opacity duration-75 ${justCaptured ? 'opacity-0' : 'opacity-100'}`}
+              />
+              {uploading && (
+                <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+                  <span className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">Uploading...</span>
                 </div>
-
-                {/* Shutter button */}
-                <button
-                  type="button"
-                  onClick={capturePhoto}
-                  disabled={uploading}
-                  className="shrink-0 w-16 h-16 rounded-full bg-white border-4 border-gray-300 active:scale-90 transition-transform disabled:opacity-50"
-                  aria-label="Take photo"
-                />
-              </div>
-
-              {cameraError && (
-                <p className="text-xs text-red-400">{cameraError}</p>
               )}
             </div>
-          ) : (
-            /* Open Camera button */
+
+            <div className="flex items-center gap-3">
+              <div className="flex gap-2 overflow-x-auto flex-1 pb-1 min-h-[56px]">
+                {photos.map(photo => (
+                  <div key={photo.publicId} className="relative shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.url} alt="" className="w-14 h-14 object-cover rounded-lg" />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(photo)}
+                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={capturePhoto}
+                disabled={uploading}
+                className="shrink-0 w-16 h-16 rounded-full bg-white border-4 border-gray-300 active:scale-90 transition-transform disabled:opacity-50"
+                aria-label="Take photo"
+              />
+            </div>
+
+            {cameraError && <p className="text-xs text-red-400">{cameraError}</p>}
+          </div>
+
+          {/* Open camera button — shown when camera is closed */}
+          {!cameraActive && (
             <div className="space-y-2">
               <button
                 type="button"
@@ -205,15 +240,12 @@ export default function AddItemPage() {
                   <circle cx="12" cy="13" r="4" />
                 </svg>
                 <span className="font-medium text-sm">
-                  {photos.length === 0 ? 'Open Camera' : `${photos.length} photo${photos.length !== 1 ? 's' : ''} — open camera to add more`}
+                  {photos.length === 0 ? 'Open Camera' : `${photos.length} photo${photos.length !== 1 ? 's' : ''} — tap to add more`}
                 </span>
               </button>
 
-              {cameraError && (
-                <p className="text-xs text-red-400">{cameraError}</p>
-              )}
+              {cameraError && <p className="text-xs text-red-400">{cameraError}</p>}
 
-              {/* Thumbnails when camera is closed */}
               {photos.length > 0 && (
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {photos.map(photo => (
