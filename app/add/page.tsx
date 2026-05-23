@@ -56,7 +56,8 @@ export default function AddItemPage() {
     if (draft) {
       if (draft.sku) setSku(draft.sku)
       if (draft.name) setName(draft.name)
-      if (draft.category) setCategory(draft.category)
+      // Always fall back to settings default if draft had no category saved
+      setCategory(draft.category || settings.defaultCategory)
       if (draft.photos) setPhotos(draft.photos)
     } else {
       setCategory(settings.defaultCategory)
@@ -64,11 +65,6 @@ export default function AddItemPage() {
     setDraftLoaded(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // only runs once on mount
-
-  // Apply default category from settings if no draft was loaded
-  useEffect(() => {
-    if (draftLoaded && !category) setCategory(settings.defaultCategory)
-  }, [draftLoaded, settings.defaultCategory, category])
 
   // Save draft whenever form changes (after initial load)
   useEffect(() => {
