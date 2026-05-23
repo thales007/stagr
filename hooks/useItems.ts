@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 export interface Photo {
   url: string
@@ -28,33 +28,71 @@ async function deletePhotoFromCloudinary(publicId: string) {
       body: JSON.stringify({ publicId }),
     })
   } catch (err) {
-    console.error('Failed to delete photo from Cloudinary:', err)
+    console.error('Failed to delete photo:', err)
   }
+}
+
+async function fetchItemsFromServer(): Promise<Item[] | null> {
+  try {
+    const res = await fetch('/api/items')
+    const data = await res.json()
+    return data.synced ? (data.items as Item[]) : null
+  } catch {
+    return null
+  }
+}
+
+async function pushItemsToServer(items: Item[]) {
+  try {
+    await fetch('/api/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    })
+  } catch {
+    // best-effort
+  }
+}
+
+function readLocalStorage(): Item[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as Item[]) : []
+  } catch { return [] }
+}
+
+function writeLocalStorage(items: Item[]) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)) } catch { /* noop */ }
 }
 
 export function useItems() {
   const [items, setItems] = useState<Item[]>([])
   const [loaded, setLoaded] = useState(false)
+  const pendingPush = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // On mount: show localStorage immediately, then fetch server data
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        setItems(JSON.parse(stored))
+    const local = readLocalStorage()
+    if (local.length > 0) setItems(local)
+
+    fetchItemsFromServer().then(serverItems => {
+      if (serverItems !== null) {
+        setItems(serverItems)
+        writeLocalStorage(serverItems)
       }
-    } catch {
-      // localStorage unavailable
-    }
-    setLoaded(true)
+      setLoaded(true)
+    })
   }, [])
 
+  // Whenever items change after load: write to localStorage and debounce push to server
   useEffect(() => {
     if (!loaded) return
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
-    } catch {
-      // localStorage unavailable
-    }
+    writeLocalStorage(items)
+
+    if (pendingPush.current) clearTimeout(pendingPush.current)
+    pendingPush.current = setTimeout(() => {
+      pushItemsToServer(items)
+    }, 800)
   }, [items, loaded])
 
   function addItem(data: { sku: string; name: string; category: string; photos?: Photo[] }) {
@@ -72,12 +110,6 @@ export function useItems() {
     return newItem
   }
 
-  function moveToDrafted(id: string) {
-    setItems(prev =>
-      prev.map(i => (i.id === id ? { ...i, status: 'drafted' as const } : i))
-    )
-  }
-
   function updateItem(id: string, updates: Partial<Omit<Item, 'id'>>) {
     setItems(prev => prev.map(item => (item.id === id ? { ...item, ...updates } : item)))
   }
@@ -85,11 +117,13 @@ export function useItems() {
   function deleteItem(id: string) {
     setItems(prev => {
       const item = prev.find(i => i.id === id)
-      if (item) {
-        Promise.all(item.photos.map(p => deletePhotoFromCloudinary(p.publicId)))
-      }
+      if (item) Promise.all(item.photos.map(p => deletePhotoFromCloudinary(p.publicId)))
       return prev.filter(i => i.id !== id)
     })
+  }
+
+  function moveToDrafted(id: string) {
+    setItems(prev => prev.map(i => (i.id === id ? { ...i, status: 'drafted' as const } : i)))
   }
 
   async function moveToListed(id: string) {
@@ -106,5 +140,5 @@ export function useItems() {
     )
   }
 
-  return { items, addItem, updateItem, deleteItem, moveToDrafted, moveToListed }
+  return { items, loaded, addItem, updateItem, deleteItem, moveToDrafted, moveToListed }
 }
