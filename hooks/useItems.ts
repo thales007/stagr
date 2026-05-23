@@ -69,30 +69,53 @@ export function useItems() {
   const [items, setItems] = useState<Item[]>([])
   const [loaded, setLoaded] = useState(false)
   const pendingPush = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Always keep latest items accessible to the push timer without stale closure
+  const latestItems = useRef<Item[]>([])
 
-  // On mount: show localStorage immediately, then fetch server data
+  useEffect(() => { latestItems.current = items }, [items])
+
+  // On mount: show local immediately, then reconcile with server
   useEffect(() => {
     const local = readLocalStorage()
     if (local.length > 0) setItems(local)
 
     fetchItemsFromServer().then(serverItems => {
-      if (serverItems !== null) {
-        setItems(serverItems)
-        writeLocalStorage(serverItems)
+      if (serverItems === null) {
+        // Redis unavailable — keep local data as-is
+        setLoaded(true)
+        return
       }
+
+      // Merge: server is source of truth, but preserve any local items
+      // that haven't been pushed yet (guards against the race condition where
+      // you add an item and navigate away before the push fires)
+      const freshLocal = readLocalStorage()
+      const serverIds = new Set(serverItems.map(i => i.id))
+      const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
+      const merged = [...serverItems, ...localOnly]
+
+      setItems(merged)
+      writeLocalStorage(merged)
+
+      // If we rescued local-only items, push the merged result now
+      if (localOnly.length > 0) {
+        pushItemsToServer(merged)
+      }
+
       setLoaded(true)
     })
   }, [])
 
-  // Whenever items change after load: write to localStorage and debounce push to server
+  // On every change after load: write localStorage + push to server
   useEffect(() => {
     if (!loaded) return
-    writeLocalStorage(items)
+    const current = latestItems.current
+    writeLocalStorage(current)
 
     if (pendingPush.current) clearTimeout(pendingPush.current)
     pendingPush.current = setTimeout(() => {
-      pushItemsToServer(items)
-    }, 800)
+      pushItemsToServer(latestItems.current)
+    }, 300)
   }, [items, loaded])
 
   function addItem(data: { sku: string; name: string; category: string; photos?: Photo[] }) {
