@@ -7,7 +7,7 @@ import { useItems } from '@/hooks/useItems'
 export default function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
-  const { items, moveToListed } = useItems()
+  const { items, moveToDrafted, moveToListed } = useItems()
 
   const item = items.find(i => i.id === id)
 
@@ -28,6 +28,11 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
   const formattedDate = new Date(item.dateAdded).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
   })
+
+  function handleMoveToDrafted() {
+    moveToDrafted(item!.id)
+    router.push('/')
+  }
 
   async function handleMoveToListed() {
     await moveToListed(item!.id)
@@ -71,13 +76,11 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Photos */}
-      {item.photos.length > 0 && (
-        <div className="mb-8">
-          {/* Desktop drag hint */}
+      {item.photos.length > 0 ? (
+        <div className="mb-6">
           <p className="hidden md:block text-xs text-gray-500 mb-3">
             Drag photos directly into your eBay listing
           </p>
-
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {item.photos.map(photo => (
               // eslint-disable-next-line @next/next/no-img-element
@@ -95,24 +98,41 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
             ))}
           </div>
         </div>
-      )}
-
-      {item.photos.length === 0 && (
-        <div className="mb-8 py-10 text-center border border-dashed border-[#2a2a2a] rounded-lg">
+      ) : (
+        <div className="mb-6 py-10 text-center border border-dashed border-[#2a2a2a] rounded-lg">
           <p className="text-sm text-gray-600">No photos on this item.</p>
         </div>
       )}
 
-      {/* Move to Listed */}
-      <button
-        onClick={handleMoveToListed}
-        className="w-full h-[56px] bg-red-600 text-white font-bold text-base rounded-lg active:opacity-80 transition-opacity"
-      >
-        Mark as Listed — Delete Photos
-      </button>
-      <p className="text-xs text-gray-600 text-center mt-2">
-        This will permanently delete all photos for this item.
-      </p>
+      {/* Status actions */}
+      <div className="space-y-3">
+        {item.status === 'prepped' && (
+          <button
+            onClick={handleMoveToDrafted}
+            className="w-full h-[52px] bg-blue-600 text-white font-semibold text-sm rounded-lg active:opacity-80 transition-opacity"
+          >
+            Move to Drafted
+          </button>
+        )}
+        {item.status === 'drafted' && (
+          <button
+            onClick={handleMoveToDrafted}
+            className="w-full h-[52px] bg-[#1a1a1a] border border-[#2a2a2a] text-gray-400 font-semibold text-sm rounded-lg active:opacity-80 transition-opacity"
+            disabled
+          >
+            Drafted
+          </button>
+        )}
+        <button
+          onClick={handleMoveToListed}
+          className="w-full h-[56px] bg-red-600 text-white font-bold text-base rounded-lg active:opacity-80 transition-opacity"
+        >
+          Mark as Listed — Delete Photos
+        </button>
+        <p className="text-xs text-gray-600 text-center">
+          This will permanently delete all photos for this item.
+        </p>
+      </div>
     </main>
   )
 }

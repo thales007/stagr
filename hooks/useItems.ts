@@ -57,19 +57,25 @@ export function useItems() {
     }
   }, [items, loaded])
 
-  function addItem(data: { sku: string; name: string; category: string; status: 'prepped' | 'drafted'; photos?: Photo[] }) {
+  function addItem(data: { sku: string; name: string; category: string; photos?: Photo[] }) {
     const newItem: Item = {
       id: crypto.randomUUID(),
       sku: data.sku,
       name: data.name,
       category: data.category,
-      status: data.status,
+      status: 'prepped',
       dateAdded: new Date().toISOString(),
       dateListed: null,
       photos: data.photos ?? [],
     }
     setItems(prev => [...prev, newItem])
     return newItem
+  }
+
+  function moveToDrafted(id: string) {
+    setItems(prev =>
+      prev.map(i => (i.id === id ? { ...i, status: 'drafted' as const } : i))
+    )
   }
 
   function updateItem(id: string, updates: Partial<Omit<Item, 'id'>>) {
@@ -100,5 +106,5 @@ export function useItems() {
     )
   }
 
-  return { items, addItem, updateItem, deleteItem, moveToListed }
+  return { items, addItem, updateItem, deleteItem, moveToDrafted, moveToListed }
 }

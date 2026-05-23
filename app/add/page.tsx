@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useItems, Photo } from '@/hooks/useItems'
+import { useSettings } from '@/hooks/useSettings'
 import { uploadPhoto } from '@/lib/cloudinary'
 
 const CATEGORIES = [
@@ -33,13 +34,13 @@ function clearDraft() {
 export default function AddItemPage() {
   const router = useRouter()
   const { addItem } = useItems()
+  const { settings } = useSettings()
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   const [sku, setSku] = useState('')
   const [name, setName] = useState('')
-  const [category, setCategory] = useState('Clothing')
-  const [status, setStatus] = useState<'prepped' | 'drafted'>('prepped')
+  const [category, setCategory] = useState('')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [uploading, setUploading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
@@ -49,24 +50,31 @@ export default function AddItemPage() {
   const [saving, setSaving] = useState(false)
   const [draftLoaded, setDraftLoaded] = useState(false)
 
-  // Restore draft on mount
+  // Restore draft on mount, falling back to settings default for category
   useEffect(() => {
     const draft = loadDraft()
     if (draft) {
       if (draft.sku) setSku(draft.sku)
       if (draft.name) setName(draft.name)
       if (draft.category) setCategory(draft.category)
-      if (draft.status) setStatus(draft.status)
       if (draft.photos) setPhotos(draft.photos)
+    } else {
+      setCategory(settings.defaultCategory)
     }
     setDraftLoaded(true)
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // only runs once on mount
+
+  // Apply default category from settings if no draft was loaded
+  useEffect(() => {
+    if (draftLoaded && !category) setCategory(settings.defaultCategory)
+  }, [draftLoaded, settings.defaultCategory, category])
 
   // Save draft whenever form changes (after initial load)
   useEffect(() => {
     if (!draftLoaded) return
-    saveDraft({ sku, name, category, status, photos })
-  }, [sku, name, category, status, photos, draftLoaded])
+    saveDraft({ sku, name, category, photos })
+  }, [sku, name, category, photos, draftLoaded])
 
   // When camera becomes active, attach the stream to the video element
   useEffect(() => {
@@ -153,7 +161,7 @@ export default function AddItemPage() {
     setSaving(true)
     stopCamera()
     clearDraft()
-    addItem({ sku: sku.trim(), name: name.trim(), category, status, photos })
+    addItem({ sku: sku.trim(), name: name.trim(), category, photos })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
   }
@@ -314,27 +322,6 @@ export default function AddItemPage() {
           </div>
         </div>
 
-        {/* Status */}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1.5">Status</label>
-          <div className="flex gap-2">
-            {(['prepped', 'drafted'] as const).map(s => (
-              <button
-                key={s}
-                onClick={() => setStatus(s)}
-                className={`flex-1 h-[52px] rounded-lg text-sm font-medium border transition-colors ${
-                  status === s
-                    ? s === 'prepped'
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                      : 'bg-blue-500/20 border-blue-500 text-blue-400'
-                    : 'bg-[#1a1a1a] border-[#2a2a2a] text-gray-500'
-                }`}
-              >
-                {s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <button
