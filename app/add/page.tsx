@@ -77,7 +77,7 @@ export default function AddItemPage() {
     setCameraError('')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1920 } },
         audio: false,
       })
       streamRef.current = stream
