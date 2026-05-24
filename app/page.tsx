@@ -7,10 +7,11 @@ import ItemCard from '@/components/ItemCard'
 import { downloadItemsAsZip } from '@/lib/downloadZip'
 
 export default function QueuePage() {
-  const { items, clearAll } = useItems()
+  const { items, clearAll, deleteItem, refresh } = useItems()
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null)
   const [clearing, setClearing] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const itemsWithPhotos = items.filter(i => i.photos.length > 0)
   const totalPhotos = itemsWithPhotos.reduce((sum, i) => sum + i.photos.length, 0)
@@ -27,6 +28,13 @@ export default function QueuePage() {
       setDownloading(false)
       setProgress(null)
     }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true)
+    refresh()
+    await new Promise(r => setTimeout(r, 800))
+    setRefreshing(false)
   }
 
   async function handleClearAll() {
@@ -49,12 +57,26 @@ export default function QueuePage() {
           <h1 className="text-2xl font-bold text-white">Stagr</h1>
           <p className="text-sm text-gray-500">Your staging queue</p>
         </div>
-        <Link href="/settings" className="text-gray-500 p-1 mt-1">
+        <div className="flex items-center gap-2 mt-1">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="text-gray-500 p-1 disabled:opacity-40"
+            aria-label="Refresh"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={refreshing ? 'animate-spin' : ''}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+          <Link href="/settings" className="text-gray-500 p-1">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
-        </Link>
+          </Link>
+        </div>
       </div>
 
       {/* Action buttons — only shown when items exist */}
@@ -126,7 +148,7 @@ export default function QueuePage() {
         {sorted.length === 0 ? (
           <p className="text-sm text-gray-600 py-4">No items yet. Tap + to add one.</p>
         ) : (
-          sorted.map(item => <ItemCard key={item.id} item={item} />)
+          sorted.map(item => <ItemCard key={item.id} item={item} onDelete={deleteItem} />)
         )}
       </section>
     </main>

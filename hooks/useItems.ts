@@ -137,7 +137,25 @@ export function useItems() {
     setItems(prev => {
       const item = prev.find(i => i.id === id)
       if (item) Promise.all(item.photos.map(p => deletePhotoFromCloudinary(p.publicId)))
-      return prev.filter(i => i.id !== id)
+      const next = prev.filter(i => i.id !== id)
+      // Write immediately so the queue page sees the change before navigation
+      writeLocalStorage(next)
+      if (pendingPush.current) clearTimeout(pendingPush.current)
+      pendingPush.current = setTimeout(() => pushItemsToServer(next), 300)
+      return next
+    })
+  }
+
+  function refresh() {
+    fetchItemsFromServer().then(serverItems => {
+      if (serverItems === null) return
+      const freshLocal = normalise(readLocalStorage())
+      const serverNorm = normalise(serverItems as unknown as Item[])
+      const serverIds = new Set(serverNorm.map(i => i.id))
+      const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
+      const merged = [...serverNorm, ...localOnly]
+      setItems(merged)
+      writeLocalStorage(merged)
     })
   }
 
@@ -147,5 +165,5 @@ export function useItems() {
     setItems([])
   }
 
-  return { items, loaded, addItem, updateItem, deleteItem, clearAll }
+  return { items, loaded, addItem, updateItem, deleteItem, clearAll, refresh }
 }
