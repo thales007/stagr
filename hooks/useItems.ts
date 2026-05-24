@@ -12,9 +12,7 @@ export interface Item {
   sku: string
   name: string
   category: string
-  status: 'prepped' | 'drafted' | 'listed'
   dateAdded: string
-  dateListed: string | null
   photos: Photo[]
 }
 
@@ -65,39 +63,43 @@ function writeLocalStorage(items: Item[]) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)) } catch { /* noop */ }
 }
 
+// Strip legacy "listed" items (status field from old data model) and
+// drop the status/dateListed fields so the data stays clean going forward.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalise(raw: any[]): Item[] {
+  return raw
+    .filter(i => i.status !== 'listed')
+    .map(({ status: _s, dateListed: _d, ...rest }) => rest as Item)
+}
+
 export function useItems() {
   const [items, setItems] = useState<Item[]>([])
   const [loaded, setLoaded] = useState(false)
   const pendingPush = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Always keep latest items accessible to the push timer without stale closure
   const latestItems = useRef<Item[]>([])
 
   useEffect(() => { latestItems.current = items }, [items])
 
   // On mount: show local immediately, then reconcile with server
   useEffect(() => {
-    const local = readLocalStorage()
+    const local = normalise(readLocalStorage())
     if (local.length > 0) setItems(local)
 
     fetchItemsFromServer().then(serverItems => {
       if (serverItems === null) {
-        // Redis unavailable — keep local data as-is
         setLoaded(true)
         return
       }
 
-      // Merge: server is source of truth, but preserve any local items
-      // that haven't been pushed yet (guards against the race condition where
-      // you add an item and navigate away before the push fires)
-      const freshLocal = readLocalStorage()
-      const serverIds = new Set(serverItems.map(i => i.id))
+      const freshLocal = normalise(readLocalStorage())
+      const serverNorm = normalise(serverItems as unknown as Item[])
+      const serverIds = new Set(serverNorm.map(i => i.id))
       const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
-      const merged = [...serverItems, ...localOnly]
+      const merged = [...serverNorm, ...localOnly]
 
       setItems(merged)
       writeLocalStorage(merged)
 
-      // If we rescued local-only items, push the merged result now
       if (localOnly.length > 0) {
         pushItemsToServer(merged)
       }
@@ -124,9 +126,7 @@ export function useItems() {
       sku: data.sku,
       name: data.name,
       category: data.category,
-      status: 'prepped',
       dateAdded: new Date().toISOString(),
-      dateListed: null,
       photos: data.photos ?? [],
     }
     setItems(prev => [...prev, newItem])
@@ -145,23 +145,11 @@ export function useItems() {
     })
   }
 
-  function moveToDrafted(id: string) {
-    setItems(prev => prev.map(i => (i.id === id ? { ...i, status: 'drafted' as const } : i)))
+  async function clearAll() {
+    const all = latestItems.current
+    await Promise.all(all.flatMap(item => item.photos.map(p => deletePhotoFromCloudinary(p.publicId))))
+    setItems([])
   }
 
-  async function moveToListed(id: string) {
-    const item = items.find(i => i.id === id)
-    if (item && item.photos.length > 0) {
-      await Promise.all(item.photos.map(p => deletePhotoFromCloudinary(p.publicId)))
-    }
-    setItems(prev =>
-      prev.map(i =>
-        i.id === id
-          ? { ...i, status: 'listed' as const, dateListed: new Date().toISOString(), photos: [] }
-          : i
-      )
-    )
-  }
-
-  return { items, loaded, addItem, updateItem, deleteItem, moveToDrafted, moveToListed }
+  return { items, loaded, addItem, updateItem, deleteItem, clearAll }
 }

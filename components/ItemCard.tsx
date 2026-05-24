@@ -24,17 +24,8 @@ export default function ItemCard({ item }: ItemCardProps) {
       onClick={() => router.push(`/item/${item.id}`)}
     >
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="mb-1">
           <span className="text-xs text-gray-500 font-mono">{item.sku}</span>
-          <span
-            className={`text-xs px-2 py-0.5 rounded shrink-0 ${
-              item.status === 'prepped'
-                ? 'bg-amber-500/20 text-amber-400'
-                : 'bg-blue-500/20 text-blue-400'
-            }`}
-          >
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-          </span>
         </div>
         <p className="font-bold text-base leading-snug truncate">{item.name}</p>
         <div className="flex items-center gap-2 mt-2">

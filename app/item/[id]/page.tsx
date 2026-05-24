@@ -16,7 +16,6 @@ async function downloadPhoto(photo: Photo, filename: string) {
     a.click()
     URL.revokeObjectURL(url)
   } catch {
-    // Fallback: open in new tab
     window.open(photo.url, '_blank')
   }
 }
@@ -24,7 +23,7 @@ async function downloadPhoto(photo: Photo, filename: string) {
 export default function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
-  const { items, moveToDrafted, moveToListed } = useItems()
+  const { items, deleteItem } = useItems()
   const [downloading, setDownloading] = useState(false)
 
   const item = items.find(i => i.id === id)
@@ -47,11 +46,16 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     month: 'short', day: 'numeric', year: 'numeric',
   })
 
+  const sanitisedSku = (item.sku.trim() || item.name.trim() || item.id)
+    .replace(/[/\\:*?"<>|]/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
+
   async function handleDownloadAll() {
     if (!item) return
     setDownloading(true)
     for (let i = 0; i < item.photos.length; i++) {
-      await downloadPhoto(item.photos[i], `${item.sku}-${i + 1}.jpg`)
+      await downloadPhoto(item.photos[i], `${sanitisedSku}_${i + 1}.jpg`)
       if (i < item.photos.length - 1) {
         await new Promise(r => setTimeout(r, 600))
       }
@@ -59,13 +63,9 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     setDownloading(false)
   }
 
-  function handleMoveToDrafted() {
-    moveToDrafted(item!.id)
-    router.push('/')
-  }
-
-  async function handleMoveToListed() {
-    await moveToListed(item!.id)
+  function handleDelete() {
+    if (!window.confirm(`Delete "${item!.name}" and all its photos? This cannot be undone.`)) return
+    deleteItem(item!.id)
     router.push('/')
   }
 
@@ -84,15 +84,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Item info */}
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-xs text-gray-500 font-mono">{item.sku}</span>
-          <span className={`text-xs px-2 py-0.5 rounded ${
-            item.status === 'prepped' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
-          }`}>
-            {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-          </span>
-        </div>
-        <h1 className="text-2xl font-bold">{item.name}</h1>
+        <span className="text-xs text-gray-500 font-mono">{item.sku}</span>
+        <h1 className="text-2xl font-bold mt-1">{item.name}</h1>
         <div className="flex items-center gap-2 mt-2">
           <span className="text-xs bg-[#2a2a2a] text-gray-400 px-2 py-0.5 rounded">{item.category}</span>
           <span className="text-xs text-gray-500">Added {formattedDate}</span>
@@ -118,7 +111,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
               : `Download All ${item.photos.length} Photo${item.photos.length !== 1 ? 's' : ''}`}
           </button>
 
-          {/* Photo grid — individual download on tap */}
+          {/* Photo grid */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {item.photos.map((photo, i) => (
               <div key={photo.publicId} className="relative group">
@@ -129,7 +122,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                   className="w-full aspect-square object-cover rounded-lg"
                 />
                 <button
-                  onClick={() => downloadPhoto(photo, `${item.sku}-${i + 1}.jpg`)}
+                  onClick={() => downloadPhoto(photo, `${sanitisedSku}_${i + 1}.jpg`)}
                   className="absolute inset-0 flex items-end justify-center pb-2 opacity-0 group-hover:opacity-100 transition-opacity md:flex hidden"
                 >
                   <span className="bg-black/70 text-white text-xs px-2 py-1 rounded">Download</span>
@@ -137,10 +130,6 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             ))}
           </div>
-
-          <p className="text-xs text-gray-600 mt-2 text-center">
-            Download photos, then upload to eBay from your files
-          </p>
         </div>
       ) : (
         <div className="mb-6 py-10 text-center border border-dashed border-[#2a2a2a] rounded-lg">
@@ -148,31 +137,16 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
-      {/* Status actions */}
-      <div className="space-y-3">
-        {item.status === 'prepped' && (
-          <button
-            onClick={handleMoveToDrafted}
-            className="w-full h-[52px] bg-blue-600 text-white font-semibold text-sm rounded-lg active:opacity-80 transition-opacity"
-          >
-            Move to Drafted
-          </button>
-        )}
-        {item.status === 'drafted' && (
-          <div className="w-full h-[52px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center">
-            <span className="text-gray-500 text-sm">Drafted</span>
-          </div>
-        )}
-        <button
-          onClick={handleMoveToListed}
-          className="w-full h-[56px] bg-red-600 text-white font-bold text-base rounded-lg active:opacity-80 transition-opacity"
-        >
-          Mark as Listed — Delete Photos
-        </button>
-        <p className="text-xs text-gray-600 text-center">
-          This permanently deletes all photos for this item.
-        </p>
-      </div>
+      {/* Delete */}
+      <button
+        onClick={handleDelete}
+        className="w-full h-[52px] bg-[#1a1a1a] border border-red-500/30 text-red-400 font-semibold text-sm rounded-lg active:opacity-80 transition-opacity"
+      >
+        Delete Item
+      </button>
+      <p className="text-xs text-gray-600 text-center mt-2">
+        Permanently removes this item and all its photos.
+      </p>
     </main>
   )
 }
