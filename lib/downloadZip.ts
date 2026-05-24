@@ -24,7 +24,7 @@ export async function downloadItemsAsZip(
     for (let i = 0; i < item.photos.length; i++) {
       const res = await fetch(item.photos[i].url)
       const blob = await res.blob()
-      folder.file(`photo-${i + 1}.jpg`, blob)
+      folder.file(`${folderName}_${i + 1}.jpg`, blob)
       fetched++
       onProgress?.(fetched, total)
     }
