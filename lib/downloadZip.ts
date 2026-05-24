@@ -15,7 +15,10 @@ export async function downloadItemsAsZip(
 
   for (const item of itemsWithPhotos) {
     // Folder name: SKU — falls back to item name if no SKU
-    const folderName = item.sku.trim() || item.name.trim() || item.id
+    const folderName = (item.sku.trim() || item.name.trim() || item.id)
+      .replace(/[/\\:*?"<>|]/g, '-')
+      .replace(/-+/g, '-')
+      .trim()
     const folder = zip.folder(folderName)!
 
     for (let i = 0; i < item.photos.length; i++) {
