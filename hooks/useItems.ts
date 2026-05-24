@@ -10,8 +10,6 @@ export interface Photo {
 export interface Item {
   id: string
   sku: string
-  name: string
-  category: string
   dateAdded: string
   photos: Photo[]
 }
@@ -69,7 +67,7 @@ function writeLocalStorage(items: Item[]) {
 function normalise(raw: any[]): Item[] {
   return raw
     .filter(i => i.status !== 'listed')
-    .map(({ status: _s, dateListed: _d, ...rest }) => rest as Item)
+    .map(({ status: _s, dateListed: _d, name: _n, category: _c, ...rest }) => rest as Item)
 }
 
 export function useItems() {
@@ -120,12 +118,10 @@ export function useItems() {
     }, 300)
   }, [items, loaded])
 
-  function addItem(data: { sku: string; name: string; category: string; photos?: Photo[] }) {
+  function addItem(data: { sku: string; photos?: Photo[] }) {
     const newItem: Item = {
       id: crypto.randomUUID(),
       sku: data.sku,
-      name: data.name,
-      category: data.category,
       dateAdded: new Date().toISOString(),
       photos: data.photos ?? [],
     }

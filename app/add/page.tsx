@@ -3,16 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useItems, Photo } from '@/hooks/useItems'
-import { useSettings } from '@/hooks/useSettings'
 import { uploadPhoto } from '@/lib/cloudinary'
-
-const CATEGORIES = [
-  'Clothing', 'Shoes', 'Electronics', 'Books', 'Toys',
-  'Home & Garden', 'Sports', 'Collectibles', 'Other',
-]
-
-const inputClass =
-  'w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 h-[52px] placeholder:text-gray-600'
 
 const DRAFT_KEY = 'stagr-add-draft'
 
@@ -34,13 +25,10 @@ function clearDraft() {
 export default function AddItemPage() {
   const router = useRouter()
   const { addItem } = useItems()
-  const { settings } = useSettings()
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   const [sku, setSku] = useState('')
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState('')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [uploading, setUploading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
@@ -50,29 +38,23 @@ export default function AddItemPage() {
   const [saving, setSaving] = useState(false)
   const [draftLoaded, setDraftLoaded] = useState(false)
 
-  // Restore draft on mount, falling back to settings default for category
+  // Restore draft on mount
   useEffect(() => {
     const draft = loadDraft()
     if (draft) {
       if (draft.sku) setSku(draft.sku)
-      if (draft.name) setName(draft.name)
-      // Always fall back to settings default if draft had no category saved
-      setCategory(draft.category || settings.defaultCategory)
       if (draft.photos) setPhotos(draft.photos)
-    } else {
-      setCategory(settings.defaultCategory)
     }
     setDraftLoaded(true)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // only runs once on mount
+  }, [])
 
-  // Save draft whenever form changes (after initial load)
+  // Save draft whenever form changes
   useEffect(() => {
     if (!draftLoaded) return
-    saveDraft({ sku, name, category, photos })
-  }, [sku, name, category, photos, draftLoaded])
+    saveDraft({ sku, photos })
+  }, [sku, photos, draftLoaded])
 
-  // When camera becomes active, attach the stream to the video element
+  // Attach stream to video element when camera becomes active
   useEffect(() => {
     if (cameraActive && streamRef.current && videoRef.current) {
       videoRef.current.srcObject = streamRef.current
@@ -89,7 +71,6 @@ export default function AddItemPage() {
     setCameraActive(false)
   }, [])
 
-  // Stop camera when leaving the page
   useEffect(() => () => stopCamera(), [stopCamera])
 
   async function startCamera() {
@@ -100,7 +81,7 @@ export default function AddItemPage() {
         audio: false,
       })
       streamRef.current = stream
-      setCameraActive(true) // useEffect above will attach stream to video element
+      setCameraActive(true)
     } catch {
       setCameraError('Camera access was denied. Tap the camera icon in your browser address bar to allow it.')
     }
@@ -152,12 +133,11 @@ export default function AddItemPage() {
 
   async function handleSave() {
     if (!sku.trim()) { setError('SKU is required'); return }
-    if (!name.trim()) { setError('Item Name is required'); return }
     setError('')
     setSaving(true)
     stopCamera()
     clearDraft()
-    addItem({ sku: sku.trim(), name: name.trim(), category, photos })
+    addItem({ sku: sku.trim(), photos })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
   }
@@ -281,43 +261,9 @@ export default function AddItemPage() {
             placeholder="e.g. NK-AM90-WHT-10"
             value={sku}
             onChange={e => setSku(e.target.value)}
-            className={inputClass}
+            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 h-[52px] placeholder:text-gray-600"
           />
         </div>
-
-        {/* Item Name */}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1.5">Item Name</label>
-          <input
-            type="text"
-            placeholder="e.g. Nike Air Max 90 White"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-
-        {/* Category */}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1.5">Category</label>
-          <div className="relative">
-            <select
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              className={`${inputClass} appearance-none pr-10`}
-            >
-              {CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
       </div>
 
       <button

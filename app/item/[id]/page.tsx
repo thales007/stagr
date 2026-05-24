@@ -46,7 +46,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     month: 'short', day: 'numeric', year: 'numeric',
   })
 
-  const sanitisedSku = (item.sku.trim() || item.name.trim() || item.id)
+  const sanitisedSku = (item.sku.trim() || item.id)
     .replace(/[/\\:*?"<>|]/g, '-')
     .replace(/-+/g, '-')
     .trim()
@@ -64,7 +64,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   function handleDelete() {
-    if (!window.confirm(`Delete "${item!.name}" and all its photos? This cannot be undone.`)) return
+    if (!window.confirm(`Delete "${item!.sku || item!.id}" and all its photos? This cannot be undone.`)) return
     deleteItem(item!.id)
     router.push('/')
   }
@@ -84,12 +84,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
       {/* Item info */}
       <div className="mb-6">
-        <span className="text-xs text-gray-500 font-mono">{item.sku}</span>
-        <h1 className="text-2xl font-bold mt-1">{item.name}</h1>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs bg-[#2a2a2a] text-gray-400 px-2 py-0.5 rounded">{item.category}</span>
-          <span className="text-xs text-gray-500">Added {formattedDate}</span>
-        </div>
+        <h1 className="text-2xl font-bold font-mono">{item.sku || 'No SKU'}</h1>
+        <p className="text-xs text-gray-500 mt-1">Added {formattedDate}</p>
       </div>
 
       {/* Photos */}
@@ -118,7 +114,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={photo.url}
-                  alt={item.name}
+                  alt={item.sku}
                   className="w-full aspect-square object-cover rounded-lg"
                 />
                 <button
