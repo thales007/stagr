@@ -62,7 +62,7 @@ export default function SettingsPage() {
       setSyncResult(`Step 1 done: ${clean.length} item(s), ${Math.round(payloadBytes / 1024)} KB`)
 
       // Step 2: push directly to cloud (server will merge with existing)
-      await new Promise(r => setTimeout(r, 400)) // let user read step 1 status
+      await new Promise(r => setTimeout(r, 3000)) // let user read step 1 status
       setSyncResult('Step 2: pushing to cloud…')
 
       const pushRes = await fetch('/api/sync-items', {

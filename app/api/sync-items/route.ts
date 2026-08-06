@@ -61,8 +61,24 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Verify the serialised payload is under Upstash's 1 MB REST limit
+  const payload = JSON.stringify(merged)
+  if (payload.length > 900_000) {
+    return NextResponse.json(
+      { error: 'Payload too large', reason: `${Math.round(payload.length / 1024)} KB — strip large items first` },
+      { status: 413 }
+    )
+  }
+
+  // Race the write against a 6-second timeout so Vercel can return a real
+  // error before its own 10-second function timeout drops the connection.
   try {
-    await redis.set(ITEMS_KEY, merged)
+    await Promise.race([
+      redis.set(ITEMS_KEY, merged),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Redis write timed out after 6s')), 6000)
+      ),
+    ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: 'Redis write failed', reason: msg }, { status: 500 })
