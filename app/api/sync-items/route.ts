@@ -22,6 +22,15 @@ function getRedis() {
   return new Redis({ url, token })
 }
 
+function timedSet(redis: Redis, key: string, value: unknown, ms: number) {
+  return Promise.race([
+    redis.set(key, value),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Redis timed out after ${ms}ms`)), ms)
+    ),
+  ])
+}
+
 export async function POST(req: NextRequest) {
   const redis = getRedis()
   if (!redis) {
@@ -36,53 +45,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  let cloud: Item[] = []
-  try {
-    cloud = (await redis.get<Item[]>(ITEMS_KEY)) ?? []
-    if (!Array.isArray(cloud)) cloud = []
-  } catch {
-    // If read fails, start fresh — don't block the write
-    cloud = []
+  if (incoming.length === 0) {
+    return NextResponse.json({ ok: true, added: 0, recovered: 0 })
   }
 
-  const merged = [...cloud]
-  let added = 0
-  let recovered = 0
-
-  for (const item of incoming) {
-    if (!item.id) continue
-    const idx = merged.findIndex(e => e.id === item.id)
-    if (idx === -1) {
-      merged.push(item)
-      added++
-    } else if ((item.photos?.length ?? 0) > (merged[idx].photos?.length ?? 0)) {
-      merged[idx] = { ...merged[idx], photos: item.photos }
-      recovered++
-    }
-  }
-
-  // Verify the serialised payload is under Upstash's 1 MB REST limit
-  const payload = JSON.stringify(merged)
+  // Skip reading existing cloud state — write incoming directly.
+  // Recovery scenario: local has the photos, cloud is empty or behind.
+  // The useItems hook will reconcile on next app load.
+  const payload = JSON.stringify(incoming)
   if (payload.length > 900_000) {
     return NextResponse.json(
-      { error: 'Payload too large', reason: `${Math.round(payload.length / 1024)} KB — strip large items first` },
+      { error: 'Payload too large', reason: `${Math.round(payload.length / 1024)} KB` },
       { status: 413 }
     )
   }
 
-  // Race the write against a 6-second timeout so Vercel can return a real
-  // error before its own 10-second function timeout drops the connection.
   try {
-    await Promise.race([
-      redis.set(ITEMS_KEY, merged),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Redis write timed out after 6s')), 6000)
-      ),
-    ])
+    await timedSet(redis, ITEMS_KEY, incoming, 6000)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return NextResponse.json({ error: 'Redis write failed', reason: msg }, { status: 500 })
   }
 
-  return NextResponse.json({ ok: true, added, recovered })
+  return NextResponse.json({ ok: true, added: incoming.length, recovered: 0 })
 }
