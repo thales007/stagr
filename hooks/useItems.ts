@@ -159,11 +159,33 @@ export function useItems() {
     })
   }
 
+  async function markListed(id: string) {
+    // Cancel any pending push — soft-delete-item handles the Redis update atomically
+    if (pendingPush.current) {
+      clearTimeout(pendingPush.current)
+      pendingPush.current = null
+    }
+    try {
+      await fetch('/api/soft-delete-item', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ itemId: id }),
+      })
+    } catch (err) {
+      console.error('Failed to mark item as listed:', err)
+    }
+    setItems(prev => {
+      const next = prev.filter(i => i.id !== id)
+      writeLocalStorage(next)
+      return next
+    })
+  }
+
   async function clearAll() {
     const all = latestItems.current
     await Promise.all(all.flatMap(item => item.photos.map(p => deletePhotoFromCloudinary(p.publicId))))
     setItems([])
   }
 
-  return { items, loaded, addItem, updateItem, deleteItem, clearAll, refresh }
+  return { items, loaded, addItem, updateItem, deleteItem, markListed, clearAll, refresh }
 }

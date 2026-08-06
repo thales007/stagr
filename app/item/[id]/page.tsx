@@ -23,8 +23,9 @@ async function downloadPhoto(photo: Photo, filename: string) {
 export default function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
-  const { items, deleteItem } = useItems()
+  const { items, deleteItem, markListed } = useItems()
   const [downloading, setDownloading] = useState(false)
+  const [listing, setListing] = useState(false)
 
   const item = items.find(i => i.id === id)
 
@@ -63,8 +64,15 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     setDownloading(false)
   }
 
+  async function handleMarkListed() {
+    if (!window.confirm(`Mark "${item!.sku || item!.id}" as listed on eBay? It will move to trash and be deleted after 48 hours.`)) return
+    setListing(true)
+    await markListed(item!.id)
+    router.push('/')
+  }
+
   function handleDelete() {
-    if (!window.confirm(`Delete "${item!.sku || item!.id}" and all its photos? This cannot be undone.`)) return
+    if (!window.confirm(`Permanently delete "${item!.sku || item!.id}" and all its photos right now? This cannot be undone.`)) return
     deleteItem(item!.id)
     router.push('/')
   }
@@ -133,15 +141,27 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
+      {/* Mark Listed */}
+      <button
+        onClick={handleMarkListed}
+        disabled={listing}
+        className="w-full h-[52px] bg-[#1a1a1a] border border-green-500/40 text-green-400 font-semibold text-sm rounded-lg active:opacity-80 disabled:opacity-50 transition-opacity mb-3"
+      >
+        {listing ? 'Moving to Trash…' : '✓ Mark Listed on eBay'}
+      </button>
+      <p className="text-xs text-gray-600 text-center mb-5">
+        Moves to trash. Photos auto-delete after 48 hours.
+      </p>
+
       {/* Delete */}
       <button
         onClick={handleDelete}
         className="w-full h-[52px] bg-[#1a1a1a] border border-red-500/30 text-red-400 font-semibold text-sm rounded-lg active:opacity-80 transition-opacity"
       >
-        Delete Item
+        Delete Item Now
       </button>
       <p className="text-xs text-gray-600 text-center mt-2">
-        Permanently removes this item and all its photos.
+        Permanently removes this item and all its photos immediately.
       </p>
     </main>
   )
