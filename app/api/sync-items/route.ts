@@ -31,6 +31,10 @@ function timedSet(redis: Redis, key: string, value: unknown, ms: number) {
   ])
 }
 
+export async function GET() {
+  return NextResponse.json({ ok: true, ready: true })
+}
+
 export async function POST(req: NextRequest) {
   const redis = getRedis()
   if (!redis) {

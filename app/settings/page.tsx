@@ -125,20 +125,37 @@ export default function SettingsPage() {
         })
       }
 
-      setSyncResult(`Step 2: pushing ${clean.length} items (${uploaded} photos uploaded) to cloud…`)
+      setSyncResult(`Step 2: checking server…`)
 
-      const pushRes = await fetch('/api/sync-items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: clean }),
-      })
-
-      if (!pushRes.ok) {
-        const errData = await pushRes.json().catch(() => ({}))
-        throw new Error(errData.reason || `Server error ${pushRes.status}`)
+      // Ping GET first — confirms the function is alive and warm
+      const pingRes = await fetch('/api/sync-items').catch(() => null)
+      if (!pingRes?.ok) {
+        throw new Error(`Server unreachable (ping failed${pingRes ? ` ${pingRes.status}` : ''})`)
       }
 
-      const result = await pushRes.json()
+      setSyncResult(`Step 2: pushing ${clean.length} item(s)…`)
+
+      // Use XHR — has different iOS home-screen-app behaviour than fetch
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('POST', '/api/sync-items', true)
+        xhr.setRequestHeader('Content-Type', 'application/json')
+        xhr.timeout = 15000
+        xhr.onload = () => {
+          try {
+            resolve(JSON.parse(xhr.responseText))
+          } catch {
+            reject(new Error(`Bad response (${xhr.status}): ${xhr.responseText.slice(0, 100)}`))
+          }
+        }
+        xhr.onerror = () => reject(new Error(`XHR network error (status ${xhr.status})`))
+        xhr.ontimeout = () => reject(new Error('XHR timed out after 15s'))
+        xhr.send(JSON.stringify({ items: clean }))
+      })
+
+      if (result.error) throw new Error(result.reason || result.error)
+
       setSyncResult(
         result.added > 0
           ? `Done! ${result.added} item(s) pushed to cloud.${uploaded > 0 ? ` ${uploaded} photo(s) uploaded.` : ''}`
