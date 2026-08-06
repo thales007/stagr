@@ -93,12 +93,25 @@ export function useItems() {
       const serverNorm = normalise(serverItems as unknown as Item[])
       const serverIds = new Set(serverNorm.map(i => i.id))
       const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
-      const merged = [...serverNorm, ...localOnly]
+
+      // For items that exist on both sides, prefer whichever has more photos.
+      // This recovers the case where photos were added locally but the server
+      // copy still has an empty photos array from an earlier push.
+      const reconciled = serverNorm.map(serverItem => {
+        const localItem = freshLocal.find(l => l.id === serverItem.id)
+        if (localItem && localItem.photos.length > serverItem.photos.length) {
+          return localItem
+        }
+        return serverItem
+      })
+      const merged = [...reconciled, ...localOnly]
 
       setItems(merged)
       writeLocalStorage(merged)
 
-      if (localOnly.length > 0) {
+      const needsSync = localOnly.length > 0 ||
+        reconciled.some((item, i) => item !== serverNorm[i])
+      if (needsSync) {
         pushItemsToServer(merged)
       }
 
