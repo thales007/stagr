@@ -34,8 +34,9 @@ export default function SettingsPage() {
     setSyncing(true)
     setSyncResult(null)
     try {
-      // Step 1: read local storage
-      setSyncResult('Step 1: reading local items…')
+      // Step 1: scan localStorage — find items + any photo data
+      setSyncResult('Step 1: scanning device storage…')
+
       const raw = localStorage.getItem('stagr-items')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const local: any[] = raw ? JSON.parse(raw) : []
@@ -45,25 +46,86 @@ export default function SettingsPage() {
         return
       }
 
-      // Strip base64 blobs and unknown fields — keep only id, sku, dateAdded, cloudinary photos
+      // Collect all localStorage keys so we can spot separate photo stores
+      const allKeys = Object.keys(localStorage)
+      const otherKeys = allKeys.filter(k => k !== 'stagr-items')
+
+      // Tally photo formats in items array
+      let base64Count = 0
+      let cloudinaryCount = 0
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const clean = local.filter((i: any) => i?.id).map((i: any) => ({
-        id: String(i.id),
-        sku: String(i.sku ?? ''),
-        dateAdded: String(i.dateAdded ?? new Date().toISOString()),
+      for (const item of local) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        photos: (i.photos ?? []).filter((p: any) =>
-          typeof p?.url === 'string' && p.url.startsWith('https://')
+        for (const p of (item.photos ?? [])) {
+          const url = typeof p === 'string' ? p : p?.url
+          if (typeof url === 'string' && url.startsWith('https://')) cloudinaryCount++
+          else if (typeof url === 'string' && url.startsWith('data:')) base64Count++
+          else if (typeof p === 'string' && p.startsWith('data:')) base64Count++
+        }
+      }
+
+      const step1 = [
+        `${local.length} item(s)`,
+        `${cloudinaryCount} cloudinary photo(s)`,
+        `${base64Count} base64 photo(s)`,
+        otherKeys.length ? `other keys: ${otherKeys.join(', ')}` : 'no other keys',
+      ].join(' · ')
+
+      setSyncResult(`Step 1: ${step1}`)
+      await new Promise(r => setTimeout(r, 6000)) // pause long enough to read + screenshot
+
+      // Build clean items — upload base64 photos to Cloudinary on the way
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
+      const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async function uploadBase64(dataUrl: string): Promise<{ url: string; publicId: string } | null> {
+        if (!cloudName || !uploadPreset) return null
+        try {
+          const fd = new FormData()
+          fd.append('file', dataUrl)
+          fd.append('upload_preset', uploadPreset)
+          fd.append('folder', 'stagr')
+          const r = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+            method: 'POST', body: fd,
+          })
+          const d = await r.json()
+          if (d.secure_url) return { url: d.secure_url, publicId: d.public_id ?? '' }
+        } catch { /* skip failed upload */ }
+        return null
+      }
+
+      let uploaded = 0
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const clean: any[] = []
+
+      for (const item of local) {
+        if (!item?.id) continue
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ).map((p: any) => ({ url: String(p.url), publicId: String(p.publicId ?? '') })),
-      }))
+        const photos: { url: string; publicId: string }[] = []
 
-      const payloadBytes = new TextEncoder().encode(JSON.stringify({ items: clean })).length
-      setSyncResult(`Step 1 done: ${clean.length} item(s), ${Math.round(payloadBytes / 1024)} KB`)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const p of (item.photos ?? [])) {
+          const url = typeof p === 'string' ? p : p?.url
+          const publicId = p?.publicId ?? ''
+          if (typeof url === 'string' && url.startsWith('https://')) {
+            photos.push({ url, publicId })
+          } else if (typeof url === 'string' && url.startsWith('data:')) {
+            setSyncResult(`Uploading photo ${uploaded + 1}…`)
+            const result = await uploadBase64(url)
+            if (result) { photos.push(result); uploaded++ }
+          }
+        }
 
-      // Step 2: push directly to cloud (server will merge with existing)
-      await new Promise(r => setTimeout(r, 3000)) // let user read step 1 status
-      setSyncResult('Step 2: pushing to cloud…')
+        clean.push({
+          id: String(item.id),
+          sku: String(item.sku ?? ''),
+          dateAdded: String(item.dateAdded ?? new Date().toISOString()),
+          photos,
+        })
+      }
+
+      setSyncResult(`Step 2: pushing ${clean.length} items (${uploaded} photos uploaded) to cloud…`)
 
       const pushRes = await fetch('/api/sync-items', {
         method: 'POST',
@@ -77,10 +139,11 @@ export default function SettingsPage() {
       }
 
       const result = await pushRes.json()
-      const parts: string[] = []
-      if (result.added > 0) parts.push(`${result.added} item${result.added !== 1 ? 's' : ''} added`)
-      if (result.recovered > 0) parts.push(`photos recovered for ${result.recovered}`)
-      setSyncResult(parts.length ? parts.join(', ') + '.' : 'Already up to date.')
+      setSyncResult(
+        result.added > 0
+          ? `Done! ${result.added} item(s) pushed to cloud.${uploaded > 0 ? ` ${uploaded} photo(s) uploaded.` : ''}`
+          : 'Already up to date.'
+      )
     } catch (err) {
       setSyncResult('Error: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
