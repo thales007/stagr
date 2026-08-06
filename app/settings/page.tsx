@@ -34,7 +34,8 @@ export default function SettingsPage() {
     setSyncing(true)
     setSyncResult(null)
     try {
-      // Read what's on this device
+      // Step 1: read local storage
+      setSyncResult('Step 1: reading local items…')
       const raw = localStorage.getItem('stagr-items')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const local: any[] = raw ? JSON.parse(raw) : []
@@ -44,60 +45,41 @@ export default function SettingsPage() {
         return
       }
 
-      // Strip base64 photo blobs — only keep real Cloudinary URLs so we don't
-      // blow the 1 MB Redis limit with old locally-stored data URIs.
+      // Strip base64 blobs and unknown fields — keep only id, sku, dateAdded, cloudinary photos
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      function cleanPhotos(item: any) {
-        return {
-          ...item,
-          photos: (item.photos ?? []).filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (p: any) => typeof p?.url === 'string' && p.url.startsWith('https://')
-          ),
-        }
-      }
+      const clean = local.filter((i: any) => i?.id).map((i: any) => ({
+        id: String(i.id),
+        sku: String(i.sku ?? ''),
+        dateAdded: String(i.dateAdded ?? new Date().toISOString()),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        photos: (i.photos ?? []).filter((p: any) =>
+          typeof p?.url === 'string' && p.url.startsWith('https://')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ).map((p: any) => ({ url: String(p.url), publicId: String(p.publicId ?? '') })),
+      }))
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cleanLocal = local.map((i: any) => cleanPhotos(i))
+      const payloadBytes = new TextEncoder().encode(JSON.stringify({ items: clean })).length
+      setSyncResult(`Step 1 done: ${clean.length} item(s), ${Math.round(payloadBytes / 1024)} KB`)
 
-      // Get current cloud state
-      const cloudRes = await fetch('/api/items')
-      const cloudData = await cloudRes.json()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cloud: any[] = cloudData.items ?? []
+      // Step 2: push directly to cloud (server will merge with existing)
+      await new Promise(r => setTimeout(r, 400)) // let user read step 1 status
+      setSyncResult('Step 2: pushing to cloud…')
 
-      // Merge: add items not in cloud, recover photos for items in cloud with fewer photos
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const merged: any[] = [...cloud]
-      let added = 0
-      let recovered = 0
-
-      for (const localItem of cleanLocal) {
-        if (!localItem.id) continue
-        const idx = merged.findIndex((c: { id: string }) => c.id === localItem.id)
-        if (idx === -1) {
-          merged.push(localItem)
-          added++
-        } else if ((localItem.photos?.length ?? 0) > (merged[idx].photos?.length ?? 0)) {
-          merged[idx] = { ...merged[idx], photos: localItem.photos }
-          recovered++
-        }
-      }
-
-      // Push merged list back to cloud
-      const pushRes = await fetch('/api/items', {
+      const pushRes = await fetch('/api/sync-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: merged }),
+        body: JSON.stringify({ items: clean }),
       })
+
       if (!pushRes.ok) {
         const errData = await pushRes.json().catch(() => ({}))
         throw new Error(errData.reason || `Server error ${pushRes.status}`)
       }
 
+      const result = await pushRes.json()
       const parts: string[] = []
-      if (added > 0) parts.push(`${added} new item${added !== 1 ? 's' : ''} added`)
-      if (recovered > 0) parts.push(`photos recovered for ${recovered} item${recovered !== 1 ? 's' : ''}`)
+      if (result.added > 0) parts.push(`${result.added} item${result.added !== 1 ? 's' : ''} added`)
+      if (result.recovered > 0) parts.push(`photos recovered for ${result.recovered}`)
       setSyncResult(parts.length ? parts.join(', ') + '.' : 'Already up to date.')
     } catch (err) {
       setSyncResult('Error: ' + (err instanceof Error ? err.message : String(err)))
