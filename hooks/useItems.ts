@@ -92,26 +92,15 @@ export function useItems() {
       const freshLocal = normalise(readLocalStorage())
       const serverNorm = normalise(serverItems as unknown as Item[])
       const serverIds = new Set(serverNorm.map(i => i.id))
+      // Cloud is authoritative for existing items. Only add items that exist
+      // locally but haven't reached the cloud yet (e.g. created offline).
       const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
-
-      // For items that exist on both sides, prefer whichever has more photos.
-      // This recovers the case where photos were added locally but the server
-      // copy still has an empty photos array from an earlier push.
-      const reconciled = serverNorm.map(serverItem => {
-        const localItem = freshLocal.find(l => l.id === serverItem.id)
-        if (localItem && localItem.photos.length > serverItem.photos.length) {
-          return localItem
-        }
-        return serverItem
-      })
-      const merged = [...reconciled, ...localOnly]
+      const merged = [...serverNorm, ...localOnly]
 
       setItems(merged)
       writeLocalStorage(merged)
 
-      const needsSync = localOnly.length > 0 ||
-        reconciled.some((item, i) => item !== serverNorm[i])
-      if (needsSync) {
+      if (localOnly.length > 0) {
         pushItemsToServer(merged)
       }
 
