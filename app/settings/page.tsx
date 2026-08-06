@@ -34,22 +34,54 @@ export default function SettingsPage() {
     setSyncing(true)
     setSyncResult(null)
     try {
+      // Read what's on this device
       const raw = localStorage.getItem('stagr-items')
-      const items = raw ? JSON.parse(raw) : []
-      if (!items.length) { setSyncResult('Nothing found on this device to sync.'); setSyncing(false); return }
-      const res = await fetch('/api/import-items', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const local: any[] = raw ? JSON.parse(raw) : []
+      if (!local.length) {
+        setSyncResult('Nothing found on this device to sync.')
+        setSyncing(false)
+        return
+      }
+
+      // Get current cloud state
+      const cloudRes = await fetch('/api/items')
+      const cloudData = await cloudRes.json()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cloud: any[] = cloudData.items ?? []
+
+      // Merge: add items not in cloud, recover photos for items in cloud with fewer photos
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const merged: any[] = [...cloud]
+      let added = 0
+      let recovered = 0
+
+      for (const localItem of local) {
+        if (!localItem.id) continue
+        const idx = merged.findIndex((c: { id: string }) => c.id === localItem.id)
+        if (idx === -1) {
+          merged.push(localItem)
+          added++
+        } else if ((localItem.photos?.length ?? 0) > (merged[idx].photos?.length ?? 0)) {
+          merged[idx] = { ...merged[idx], photos: localItem.photos }
+          recovered++
+        }
+      }
+
+      // Push merged list back to cloud
+      const pushRes = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items: merged }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Server error')
-      const parts = []
-      if (data.added > 0) parts.push(`${data.added} item${data.added !== 1 ? 's' : ''} added`)
-      if (data.recovered > 0) parts.push(`${data.recovered} item${data.recovered !== 1 ? 's' : ''} had photos recovered`)
+      if (!pushRes.ok) throw new Error(`Server error ${pushRes.status}`)
+
+      const parts: string[] = []
+      if (added > 0) parts.push(`${added} new item${added !== 1 ? 's' : ''} added`)
+      if (recovered > 0) parts.push(`photos recovered for ${recovered} item${recovered !== 1 ? 's' : ''}`)
       setSyncResult(parts.length ? parts.join(', ') + '.' : 'Already up to date.')
     } catch (err) {
-      setSyncResult('Failed: ' + (err instanceof Error ? err.message : 'unknown error'))
+      setSyncResult('Error: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setSyncing(false)
     }
