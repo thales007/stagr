@@ -44,6 +44,22 @@ export default function SettingsPage() {
         return
       }
 
+      // Strip base64 photo blobs — only keep real Cloudinary URLs so we don't
+      // blow the 1 MB Redis limit with old locally-stored data URIs.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      function cleanPhotos(item: any) {
+        return {
+          ...item,
+          photos: (item.photos ?? []).filter(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (p: any) => typeof p?.url === 'string' && p.url.startsWith('https://')
+          ),
+        }
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cleanLocal = local.map((i: any) => cleanPhotos(i))
+
       // Get current cloud state
       const cloudRes = await fetch('/api/items')
       const cloudData = await cloudRes.json()
@@ -56,7 +72,7 @@ export default function SettingsPage() {
       let added = 0
       let recovered = 0
 
-      for (const localItem of local) {
+      for (const localItem of cleanLocal) {
         if (!localItem.id) continue
         const idx = merged.findIndex((c: { id: string }) => c.id === localItem.id)
         if (idx === -1) {
@@ -74,7 +90,10 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items: merged }),
       })
-      if (!pushRes.ok) throw new Error(`Server error ${pushRes.status}`)
+      if (!pushRes.ok) {
+        const errData = await pushRes.json().catch(() => ({}))
+        throw new Error(errData.reason || `Server error ${pushRes.status}`)
+      }
 
       const parts: string[] = []
       if (added > 0) parts.push(`${added} new item${added !== 1 ? 's' : ''} added`)

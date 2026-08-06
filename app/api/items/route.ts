@@ -32,7 +32,8 @@ export async function POST(req: NextRequest) {
     const { items } = await req.json()
     await redis.set(ITEMS_KEY, items)
     return NextResponse.json({ ok: true })
-  } catch {
-    return NextResponse.json({ ok: false, reason: 'Redis write failed' }, { status: 500 })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return NextResponse.json({ ok: false, reason: msg }, { status: 500 })
   }
 }
