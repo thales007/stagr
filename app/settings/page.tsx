@@ -12,13 +12,48 @@ export default function SettingsPage() {
   const router = useRouter()
   const [trash, setTrash] = useState<TrashInfo | null>(null)
   const [emptying, setEmptying] = useState(false)
+  const [localCount, setLocalCount] = useState<number | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem('stagr-items')
+      const items = raw ? JSON.parse(raw) : []
+      setLocalCount(Array.isArray(items) ? items.length : 0)
+    } catch {
+      setLocalCount(0)
+    }
     fetch('/api/trash')
       .then(r => r.json())
       .then(d => setTrash({ count: d.count ?? 0, totalPhotos: d.totalPhotos ?? 0 }))
       .catch(() => setTrash({ count: 0, totalPhotos: 0 }))
   }, [])
+
+  async function handleSync() {
+    setSyncing(true)
+    setSyncResult(null)
+    try {
+      const raw = localStorage.getItem('stagr-items')
+      const items = raw ? JSON.parse(raw) : []
+      if (!items.length) { setSyncResult('Nothing found on this device to sync.'); setSyncing(false); return }
+      const res = await fetch('/api/import-items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Server error')
+      const parts = []
+      if (data.added > 0) parts.push(`${data.added} item${data.added !== 1 ? 's' : ''} added`)
+      if (data.recovered > 0) parts.push(`${data.recovered} item${data.recovered !== 1 ? 's' : ''} had photos recovered`)
+      setSyncResult(parts.length ? parts.join(', ') + '.' : 'Already up to date.')
+    } catch (err) {
+      setSyncResult('Failed: ' + (err instanceof Error ? err.message : 'unknown error'))
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   async function handleEmptyTrash() {
     if (!trash || trash.count === 0) return
@@ -46,6 +81,29 @@ export default function SettingsPage() {
         </button>
         <h1 className="text-xl font-bold">Settings</h1>
       </div>
+
+      {/* Cloud Sync */}
+      <section className="mb-6">
+        <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Cloud Sync</h2>
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-4">
+          <p className="text-sm text-gray-300 mb-1">
+            {localCount === null ? 'Checking…' : `${localCount} item${localCount !== 1 ? 's' : ''} on this device`}
+          </p>
+          <p className="text-xs text-gray-500 mb-4">
+            Pushes anything saved on this device up to the cloud so it appears everywhere.
+          </p>
+          {syncResult && (
+            <p className="text-xs text-amber-400 mb-3">{syncResult}</p>
+          )}
+          <button
+            onClick={handleSync}
+            disabled={syncing || localCount === 0}
+            className="w-full h-[44px] bg-[#1a1a1a] border border-amber-500/40 text-amber-400 text-sm font-semibold rounded-lg active:opacity-80 disabled:opacity-40 transition-opacity"
+          >
+            {syncing ? 'Syncing…' : 'Push This Device to Cloud'}
+          </button>
+        </div>
+      </section>
 
       {/* Trash */}
       <section className="mb-6">
@@ -83,7 +141,7 @@ export default function SettingsPage() {
         <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">About</h2>
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-4 space-y-1">
           <p className="text-sm font-medium">Stagr</p>
-          <p className="text-xs text-gray-500">Version 1.0</p>
+          <p className="text-xs text-gray-500">Version 1.1</p>
           <p className="text-xs text-gray-500">stagr.timothyhales.com</p>
         </div>
       </section>
