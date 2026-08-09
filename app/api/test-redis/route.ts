@@ -2,62 +2,42 @@ import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
 function getRedis() {
-  const url = process.env.KV_REST_API_URL
-  const token = process.env.KV_REST_API_TOKEN
-  if (!url || !token) return null
-  return new Redis({ url, token })
+  try { return Redis.fromEnv() } catch { return null }
 }
 
 export async function GET() {
-  const url = process.env.KV_REST_API_URL
-  const token = process.env.KV_REST_API_TOKEN
-
-  if (!url || !token) {
-    return NextResponse.json({ error: 'env vars missing', url: !!url, token: !!token })
+  const redis = getRedis()
+  if (!redis) {
+    return NextResponse.json({
+      error: 'Redis not configured',
+      hint: 'Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel env vars',
+    })
   }
 
-  const redis = getRedis()!
+  const timeout = (ms: number) =>
+    new Promise<never>((_, r) => setTimeout(() => r(new Error(`timeout after ${ms}ms`)), ms))
 
-  // Test write
   let writeResult: unknown = null
   let writeError: string | null = null
   try {
-    writeResult = await Promise.race([
-      redis.set('stagr:ping', 'pong'),
-      new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000)),
-    ])
-  } catch (e) {
-    writeError = e instanceof Error ? e.message : String(e)
-  }
+    writeResult = await Promise.race([redis.set('stagr:ping', 'pong'), timeout(5000)])
+  } catch (e) { writeError = e instanceof Error ? e.message : String(e) }
 
-  // Test read
   let readResult: unknown = null
   let readError: string | null = null
   try {
-    readResult = await Promise.race([
-      redis.get('stagr:ping'),
-      new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 5000)),
-    ])
-  } catch (e) {
-    readError = e instanceof Error ? e.message : String(e)
-  }
+    readResult = await Promise.race([redis.get('stagr:ping'), timeout(5000)])
+  } catch (e) { readError = e instanceof Error ? e.message : String(e) }
 
-  // Check what's in stagr:items
   let itemCount: number | string = 'unknown'
   try {
-    const items = await Promise.race([
-      redis.get<unknown[]>('stagr:items'),
-      new Promise<null>((_, r) => setTimeout(() => r(null), 5000)),
-    ])
+    const items = await Promise.race([redis.get<unknown[]>('stagr:items'), timeout(5000)])
     itemCount = Array.isArray(items) ? items.length : (items === null ? 0 : typeof items)
-  } catch (e) {
-    itemCount = 'error: ' + (e instanceof Error ? e.message : String(e))
-  }
+  } catch (e) { itemCount = 'error: ' + (e instanceof Error ? e.message : String(e)) }
 
   return NextResponse.json({
     write: writeError ? { error: writeError } : { result: writeResult },
     read: readError ? { error: readError } : { result: readResult },
     itemCount,
-    urlPrefix: url.slice(0, 30) + '…',
   })
 }

@@ -18,10 +18,7 @@ interface TrashItem {
 }
 
 function getRedis() {
-  const url = process.env.KV_REST_API_URL
-  const token = process.env.KV_REST_API_TOKEN
-  if (!url || !token) return null
-  return new Redis({ url, token })
+  try { return Redis.fromEnv() } catch { return null }
 }
 
 export async function GET(req: NextRequest) {
