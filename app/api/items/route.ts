@@ -1,19 +1,11 @@
-import { Redis } from '@upstash/redis'
 import { NextRequest, NextResponse } from 'next/server'
+import { redisGet, redisSet } from '@/lib/redis'
 
 const ITEMS_KEY = 'stagr:items'
 
-function getRedis() {
-  try { return Redis.fromEnv() } catch { return null }
-}
-
 export async function GET() {
-  const redis = getRedis()
-  if (!redis) {
-    return NextResponse.json({ items: [], synced: false })
-  }
   try {
-    const items = await redis.get(ITEMS_KEY)
+    const items = await redisGet(ITEMS_KEY)
     return NextResponse.json({ items: items ?? [], synced: true })
   } catch {
     return NextResponse.json({ items: [], synced: false })
@@ -21,13 +13,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const redis = getRedis()
-  if (!redis) {
-    return NextResponse.json({ ok: false, reason: 'Redis not configured' })
-  }
   try {
     const { items } = await req.json()
-    await redis.set(ITEMS_KEY, items)
+    await redisSet(ITEMS_KEY, items)
     return NextResponse.json({ ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

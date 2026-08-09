@@ -1,6 +1,6 @@
-import { Redis } from '@upstash/redis'
 import { v2 as cloudinary } from 'cloudinary'
 import { NextResponse } from 'next/server'
+import { redisGet, redisSet } from '@/lib/redis'
 
 const TRASH_KEY = 'stagr:trash'
 const CORS = {
@@ -9,22 +9,8 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 
-interface Photo {
-  url: string
-  publicId: string
-}
-
-interface TrashItem {
-  id: string
-  sku: string
-  dateAdded: string
-  deletedAt: string
-  photos: Photo[]
-}
-
-function getRedis() {
-  try { return Redis.fromEnv() } catch { return null }
-}
+interface Photo { url: string; publicId: string }
+interface TrashItem { id: string; sku: string; dateAdded: string; deletedAt: string; photos: Photo[] }
 
 function getCloudinary() {
   cloudinary.config({
@@ -40,43 +26,29 @@ export async function OPTIONS() {
 }
 
 export async function GET() {
-  const redis = getRedis()
-  if (!redis) {
-    return NextResponse.json({ count: 0, totalPhotos: 0 }, { headers: CORS })
-  }
   try {
-    const trash = (await redis.get<TrashItem[]>(TRASH_KEY)) ?? []
-    const count = trash.length
-    const totalPhotos = trash.reduce((sum, item) => sum + (item.photos?.length ?? 0), 0)
-    return NextResponse.json({ count, totalPhotos }, { headers: CORS })
+    const trash = (await redisGet<TrashItem[]>(TRASH_KEY)) ?? []
+    return NextResponse.json({
+      count: trash.length,
+      totalPhotos: trash.reduce((n, i) => n + (i.photos?.length ?? 0), 0),
+    }, { headers: CORS })
   } catch {
     return NextResponse.json({ count: 0, totalPhotos: 0 }, { headers: CORS })
   }
 }
 
 export async function DELETE() {
-  const redis = getRedis()
-  if (!redis) {
-    return NextResponse.json({ error: 'Redis not configured' }, { status: 503, headers: CORS })
-  }
-
   try {
-    const trash = (await redis.get<TrashItem[]>(TRASH_KEY)) ?? []
+    const trash = (await redisGet<TrashItem[]>(TRASH_KEY)) ?? []
     if (trash.length === 0) {
       return NextResponse.json({ ok: true, deleted: 0, photos: 0 }, { headers: CORS })
     }
-
     const cld = getCloudinary()
-    const publicIds = trash.flatMap(item => (item.photos ?? []).map(p => p.publicId))
-    const totalPhotos = publicIds.length
-
+    const publicIds = trash.flatMap(i => (i.photos ?? []).map(p => p.publicId))
     await Promise.all(publicIds.map(id => cld.uploader.destroy(id)))
-    await redis.set(TRASH_KEY, [])
-
-    console.log(`[trash] Emptied ${trash.length} items, ${totalPhotos} photos at ${new Date().toISOString()}`)
-    return NextResponse.json({ ok: true, deleted: trash.length, photos: totalPhotos }, { headers: CORS })
+    await redisSet(TRASH_KEY, [])
+    return NextResponse.json({ ok: true, deleted: trash.length, photos: publicIds.length }, { headers: CORS })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500, headers: CORS })
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS })
   }
 }
