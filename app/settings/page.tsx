@@ -8,11 +8,17 @@ interface TrashInfo {
   totalPhotos: number
 }
 
+interface CloudInfo {
+  count: number
+  photos: number
+}
+
 export default function SettingsPage() {
   const router = useRouter()
   const [trash, setTrash] = useState<TrashInfo | null>(null)
   const [emptying, setEmptying] = useState(false)
   const [localCount, setLocalCount] = useState<number | null>(null)
+  const [cloudInfo, setCloudInfo] = useState<CloudInfo | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
 
@@ -28,6 +34,17 @@ export default function SettingsPage() {
       .then(r => r.json())
       .then(d => setTrash({ count: d.count ?? 0, totalPhotos: d.totalPhotos ?? 0 }))
       .catch(() => setTrash({ count: 0, totalPhotos: 0 }))
+    // Show what the extension would see — confirms Redis has the data
+    fetch('/api/extension-items')
+      .then(r => r.json())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((d: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const items: any[] = d.items ?? []
+        const photos = items.reduce((n: number, i: any) => n + (i.photos?.length ?? 0), 0)
+        setCloudInfo({ count: items.length, photos })
+      })
+      .catch(() => setCloudInfo({ count: 0, photos: 0 }))
   }, [])
 
   async function handleSync() {
@@ -201,6 +218,11 @@ export default function SettingsPage() {
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-4">
           <p className="text-sm text-gray-300 mb-1">
             {localCount === null ? 'Checking…' : `${localCount} item${localCount !== 1 ? 's' : ''} on this device`}
+          </p>
+          <p className="text-xs text-gray-500 mb-1">
+            {cloudInfo === null
+              ? 'Checking cloud…'
+              : `${cloudInfo.count} item${cloudInfo.count !== 1 ? 's' : ''} · ${cloudInfo.photos} photo${cloudInfo.photos !== 1 ? 's' : ''} in cloud`}
           </p>
           <p className="text-xs text-gray-500 mb-4">
             Pushes anything saved on this device up to the cloud so it appears everywhere.
