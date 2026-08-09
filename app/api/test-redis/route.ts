@@ -1,43 +1,45 @@
-import { Redis } from '@upstash/redis'
 import { NextResponse } from 'next/server'
 
-function getRedis() {
-  try { return Redis.fromEnv() } catch { return null }
-}
-
 export async function GET() {
-  const redis = getRedis()
-  if (!redis) {
-    return NextResponse.json({
-      error: 'Redis not configured',
-      hint: 'Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel env vars',
-    })
+  const url = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+
+  const result: Record<string, unknown> = {
+    hasUrl: !!url,
+    hasToken: !!token,
+    urlPrefix: url ? url.slice(0, 40) + '…' : null,
   }
 
-  const timeout = (ms: number) =>
-    new Promise<never>((_, r) => setTimeout(() => r(new Error(`timeout after ${ms}ms`)), ms))
+  if (!url || !token) {
+    result.error = 'env vars missing — set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN in Vercel'
+    return NextResponse.json(result)
+  }
 
-  let writeResult: unknown = null
-  let writeError: string | null = null
+  // Bypass the SDK — hit Upstash REST directly with a plain fetch
+  // GET /get/stagr:ping  →  { result: "pong" } if key exists, { result: null } if not
   try {
-    writeResult = await Promise.race([redis.set('stagr:ping', 'pong'), timeout(5000)])
-  } catch (e) { writeError = e instanceof Error ? e.message : String(e) }
+    const res = await Promise.race([
+      fetch(`${url}/set/stagr:ping/hello`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout 6s')), 6000)),
+    ]) as Response
+    const body = await res.json()
+    result.directWrite = { status: res.status, body }
+  } catch (e) {
+    result.directWrite = { error: e instanceof Error ? e.message : String(e) }
+  }
 
-  let readResult: unknown = null
-  let readError: string | null = null
+  // Also test basic internet connectivity from Vercel
   try {
-    readResult = await Promise.race([redis.get('stagr:ping'), timeout(5000)])
-  } catch (e) { readError = e instanceof Error ? e.message : String(e) }
+    const res = await Promise.race([
+      fetch('https://httpbin.org/get'),
+      new Promise<never>((_, r) => setTimeout(() => r(new Error('timeout 6s')), 6000)),
+    ]) as Response
+    result.internetTest = { status: res.status, ok: res.ok }
+  } catch (e) {
+    result.internetTest = { error: e instanceof Error ? e.message : String(e) }
+  }
 
-  let itemCount: number | string = 'unknown'
-  try {
-    const items = await Promise.race([redis.get<unknown[]>('stagr:items'), timeout(5000)])
-    itemCount = Array.isArray(items) ? items.length : (items === null ? 0 : typeof items)
-  } catch (e) { itemCount = 'error: ' + (e instanceof Error ? e.message : String(e)) }
-
-  return NextResponse.json({
-    write: writeError ? { error: writeError } : { result: writeResult },
-    read: readError ? { error: readError } : { result: readResult },
-    itemCount,
-  })
+  return NextResponse.json(result)
 }
