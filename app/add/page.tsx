@@ -46,7 +46,7 @@ export default function AddItemPage() {
   const [saving, setSaving] = useState(false)
   const [draftLoaded, setDraftLoaded] = useState(false)
 
-  // Restore draft on mount
+  // Restore draft on mount, then auto-open camera
   useEffect(() => {
     const draft = loadDraft()
     if (draft) {
@@ -54,6 +54,8 @@ export default function AddItemPage() {
       if (draft.photos) setPhotos(draft.photos)
     }
     setDraftLoaded(true)
+    startCamera()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Save draft whenever form changes
