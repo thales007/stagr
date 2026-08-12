@@ -7,6 +7,14 @@ import { uploadPhoto } from '@/lib/cloudinary'
 
 const DRAFT_KEY = 'stagr-add-draft'
 
+function todayMMDDYY(): string {
+  const d = new Date()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const yy = String(d.getFullYear()).slice(2)
+  return `${mm}${dd}${yy}`
+}
+
 function loadDraft() {
   try {
     const raw = localStorage.getItem(DRAFT_KEY)
@@ -137,7 +145,7 @@ export default function AddItemPage() {
     setSaving(true)
     stopCamera()
     clearDraft()
-    addItem({ sku: sku.trim(), photos })
+    addItem({ sku: `${sku.trim()} ${todayMMDDYY()}`, photos })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
   }
@@ -258,11 +266,16 @@ export default function AddItemPage() {
           <label className="block text-sm text-gray-400 mb-1.5">SKU</label>
           <input
             type="text"
-            placeholder="e.g. NK-AM90-WHT-10"
+            placeholder="e.g. 0510 or G01278"
             value={sku}
             onChange={e => setSku(e.target.value)}
             className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 h-[52px] placeholder:text-gray-600"
           />
+          {sku.trim() && (
+            <p className="mt-1.5 text-xs text-gray-500">
+              Saves as <span className="text-amber-400 font-mono">{sku.trim()} {todayMMDDYY()}</span>
+            </p>
+          )}
         </div>
       </div>
 

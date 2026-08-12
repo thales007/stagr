@@ -28,11 +28,11 @@ async function deletePhotoFromCloudinary(publicId: string) {
   }
 }
 
-async function fetchItemsFromServer(): Promise<Item[] | null> {
+async function fetchItemsFromServer(): Promise<{ items: Item[]; trashIds: string[] } | null> {
   try {
     const res = await fetch('/api/items')
     const data = await res.json()
-    return data.synced ? (data.items as Item[]) : null
+    return data.synced ? { items: data.items as Item[], trashIds: (data.trashIds ?? []) as string[] } : null
   } catch {
     return null
   }
@@ -83,18 +83,20 @@ export function useItems() {
     const local = normalise(readLocalStorage())
     if (local.length > 0) setItems(local)
 
-    fetchItemsFromServer().then(serverItems => {
-      if (serverItems === null) {
+    fetchItemsFromServer().then(result => {
+      if (result === null) {
         setLoaded(true)
         return
       }
 
       const freshLocal = normalise(readLocalStorage())
-      const serverNorm = normalise(serverItems as unknown as Item[])
+      const serverNorm = normalise(result.items as unknown as Item[])
       const serverIds = new Set(serverNorm.map(i => i.id))
+      const trashIdSet = new Set(result.trashIds)
       // Cloud is authoritative for existing items. Only add items that exist
       // locally but haven't reached the cloud yet (e.g. created offline).
-      const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
+      // Exclude trashed items so extension-triggered soft-deletes aren't re-pushed.
+      const localOnly = freshLocal.filter(i => !serverIds.has(i.id) && !trashIdSet.has(i.id))
       const merged = [...serverNorm, ...localOnly]
 
       setItems(merged)
@@ -149,12 +151,13 @@ export function useItems() {
   }
 
   function refresh() {
-    fetchItemsFromServer().then(serverItems => {
-      if (serverItems === null) return
+    fetchItemsFromServer().then(result => {
+      if (result === null) return
       const freshLocal = normalise(readLocalStorage())
-      const serverNorm = normalise(serverItems as unknown as Item[])
+      const serverNorm = normalise(result.items as unknown as Item[])
       const serverIds = new Set(serverNorm.map(i => i.id))
-      const localOnly = freshLocal.filter(i => !serverIds.has(i.id))
+      const trashIdSet = new Set(result.trashIds)
+      const localOnly = freshLocal.filter(i => !serverIds.has(i.id) && !trashIdSet.has(i.id))
       const merged = [...serverNorm, ...localOnly]
       setItems(merged)
       writeLocalStorage(merged)
