@@ -139,6 +139,23 @@ export default function AddItemPage() {
     } catch { /* best-effort */ }
   }
 
+  async function handleClear() {
+    stopCamera()
+    await Promise.all(
+      photos.map(photo =>
+        fetch('/api/delete-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ publicId: photo.publicId }),
+        }).catch(() => {})
+      )
+    )
+    setSku('')
+    setPhotos([])
+    setError('')
+    clearDraft()
+  }
+
   async function handleSave() {
     if (!sku.trim()) { setError('SKU is required'); return }
     setError('')
@@ -152,7 +169,18 @@ export default function AddItemPage() {
 
   return (
     <main className="px-4 pt-6 pb-6">
-      <h1 className="text-xl font-bold mb-6">Add Item</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-bold">Add Item</h1>
+        {(sku || photos.length > 0) && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="text-sm text-red-400 active:opacity-60"
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       {error && (
         <div className="mb-4 px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
