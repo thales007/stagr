@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useItems, Photo } from '@/hooks/useItems'
 import { uploadPhoto } from '@/lib/cloudinary'
+import type { Worker as TesseractWorker } from 'tesseract.js'
 
 const DRAFT_KEY = 'stagr-add-draft'
 
@@ -53,6 +54,9 @@ export default function AddItemPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [draftLoaded, setDraftLoaded] = useState(false)
+  const [scanState, setScanState] = useState<'idle' | 'loading' | 'scanning'>('idle')
+  const [scanResult, setScanResult] = useState<'ok' | 'miss' | null>(null)
+  const ocrWorker = useRef<TesseractWorker | null>(null)
 
   // On mount: check URL params for pre-linked sheet item, else restore draft
   useEffect(() => {
@@ -104,7 +108,10 @@ export default function AddItemPage() {
     setCameraActive(false)
   }, [])
 
-  useEffect(() => () => stopCamera(), [stopCamera])
+  useEffect(() => () => {
+    stopCamera()
+    ocrWorker.current?.terminate().catch(() => {})
+  }, [stopCamera])
 
   async function startCamera() {
     setCameraError('')
@@ -117,6 +124,58 @@ export default function AddItemPage() {
       setCameraActive(true)
     } catch {
       setCameraError('Camera access was denied. Tap the camera icon in your browser address bar to allow it.')
+    }
+  }
+
+  async function scanSku() {
+    if (!cameraActive) {
+      await startCamera()
+      return
+    }
+    const video = videoRef.current
+    if (!video || video.readyState < 2) return
+
+    setScanResult(null)
+
+    // Lazy-init the OCR worker (downloads ~4MB model on first ever call, cached after)
+    if (!ocrWorker.current) {
+      setScanState('loading')
+      const { createWorker } = await import('tesseract.js')
+      const worker = await createWorker('eng')
+      await worker.setParameters({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tessedit_pageseg_mode: '7' as any,
+      })
+      ocrWorker.current = worker
+    }
+
+    setScanState('scanning')
+
+    // Capture center strip of the frame where the sticker is most likely held
+    const canvas = document.createElement('canvas')
+    const cropW = video.videoWidth
+    const cropH = Math.round(video.videoHeight * 0.4)
+    const cropY = Math.round(video.videoHeight * 0.3)
+    canvas.width = cropW
+    canvas.height = cropH
+    canvas.getContext('2d')!.drawImage(video, 0, cropY, cropW, cropH, 0, 0, cropW, cropH)
+
+    try {
+      const { data: { text } } = await ocrWorker.current.recognize(canvas)
+      const cleaned = text.replace(/[^A-Z0-9]/gi, '').toUpperCase().trim()
+      if (cleaned) {
+        setSku(cleaned)
+        setScanResult('ok')
+      } else {
+        setScanResult('miss')
+      }
+    } catch {
+      setScanResult('miss')
+    } finally {
+      setScanState('idle')
+      setTimeout(() => setScanResult(null), 2000)
     }
   }
 
@@ -370,17 +429,47 @@ export default function AddItemPage() {
         {/* SKU */}
         <div>
           <label className="block text-sm text-gray-400 mb-1.5">SKU</label>
-          <input
-            type="text"
-            placeholder="e.g. 0510 or G01278"
-            value={sku}
-            onChange={e => setSku(e.target.value)}
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 h-[52px] placeholder:text-gray-600"
-          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="e.g. 0510 or G01278"
+              value={sku}
+              onChange={e => setSku(e.target.value)}
+              className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 rounded-lg focus:outline-none focus:border-amber-500 h-[52px] placeholder:text-gray-600"
+            />
+            <button
+              type="button"
+              onClick={scanSku}
+              disabled={scanState !== 'idle'}
+              className="shrink-0 h-[52px] px-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-amber-500 disabled:opacity-50 flex flex-col items-center justify-center gap-0.5"
+              aria-label="Scan SKU sticker"
+            >
+              {scanState === 'loading' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              ) : scanState === 'scanning' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8M12 8v8"/></svg>
+              ) : scanResult === 'ok' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              ) : scanResult === 'miss' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/>
+                  <line x1="7" y1="12" x2="17" y2="12"/>
+                </svg>
+              )}
+              <span className="text-[10px] leading-none">
+                {scanState === 'loading' ? 'Loading' : scanState === 'scanning' ? 'Reading' : !cameraActive ? 'Camera' : 'Scan'}
+              </span>
+            </button>
+          </div>
           {sku.trim() && (
             <p className="mt-1.5 text-xs text-gray-500">
               Saves as <span className="text-amber-400 font-mono">{sku.trim()} {todayMMDDYY()}</span>
             </p>
+          )}
+          {!cameraActive && scanState === 'idle' && !sku && (
+            <p className="mt-1.5 text-xs text-gray-500">Tap Scan to open camera and read the SKU sticker</p>
           )}
         </div>
       </div>
