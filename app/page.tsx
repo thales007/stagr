@@ -146,7 +146,7 @@ export default function ToBeListedPage() {
             placeholder="Filter by brand or name..."
             value={sheetFilter}
             onChange={e => setSheetFilter(e.target.value)}
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm px-4 h-[44px] rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-gray-600 mb-3"
+            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 h-[44px] rounded-lg focus:outline-none focus:border-blue-500 placeholder:text-gray-600 mb-3"
           />
           {displayed.length === 0 ? (
             <p className="text-sm text-gray-600 py-4">No results for &ldquo;{sheetFilter}&rdquo;.</p>

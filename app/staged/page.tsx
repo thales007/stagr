@@ -87,7 +87,7 @@ export default function StagedPage() {
             placeholder="Filter by SKU or name..."
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm px-4 h-[44px] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-gray-600 mb-3"
+            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-base px-4 h-[44px] rounded-lg focus:outline-none focus:border-amber-500 placeholder:text-gray-600 mb-3"
           />
           {filtered.length === 0 ? (
             <p className="text-sm text-gray-600 py-4">No items match &ldquo;{filter}&rdquo;.</p>
