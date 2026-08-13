@@ -54,9 +54,10 @@ export default function AddItemPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [draftLoaded, setDraftLoaded] = useState(false)
-  const [scanState, setScanState] = useState<'idle' | 'loading' | 'scanning'>('idle')
+  const [scanState, setScanState] = useState<'idle' | 'aiming' | 'loading' | 'scanning'>('idle')
   const [scanResult, setScanResult] = useState<'ok' | 'miss' | null>(null)
   const ocrWorker = useRef<TesseractWorker | null>(null)
+  const aimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // On mount: check URL params for pre-linked sheet item, else restore draft
   useEffect(() => {
@@ -110,6 +111,7 @@ export default function AddItemPage() {
 
   useEffect(() => () => {
     stopCamera()
+    if (aimTimerRef.current) clearTimeout(aimTimerRef.current)
     ocrWorker.current?.terminate().catch(() => {})
   }, [stopCamera])
 
@@ -127,17 +129,36 @@ export default function AddItemPage() {
     }
   }
 
-  async function scanSku() {
-    if (!cameraActive) {
-      await startCamera()
-      return
+  function preprocessForOCR(src: HTMLCanvasElement): HTMLCanvasElement {
+    const out = document.createElement('canvas')
+    out.width = src.width * 2
+    out.height = src.height * 2
+    const ctx = out.getContext('2d')!
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(src, 0, 0, out.width, out.height)
+    const img = ctx.getImageData(0, 0, out.width, out.height)
+    const d = img.data
+    // Compute mean brightness for adaptive threshold
+    let sum = 0
+    for (let i = 0; i < d.length; i += 4) sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+    const thresh = Math.max(80, Math.min(200, (sum / (d.length / 4)) * 0.9))
+    for (let i = 0; i < d.length; i += 4) {
+      const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+      const v = g > thresh ? 255 : 0
+      d[i] = d[i + 1] = d[i + 2] = v
+      d[i + 3] = 255
     }
+    ctx.putImageData(img, 0, 0)
+    return out
+  }
+
+  async function runOCR() {
     const video = videoRef.current
     if (!video || video.readyState < 2) return
 
     setScanResult(null)
 
-    // Lazy-init the OCR worker (downloads ~4MB model on first ever call, cached after)
     if (!ocrWorker.current) {
       setScanState('loading')
       const { createWorker } = await import('tesseract.js')
@@ -146,24 +167,27 @@ export default function AddItemPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789' as any,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        tessedit_pageseg_mode: '7' as any,
+        tessedit_pageseg_mode: '11' as any, // sparse text — finds text anywhere
       })
       ocrWorker.current = worker
     }
 
     setScanState('scanning')
 
-    // Capture center strip of the frame where the sticker is most likely held
-    const canvas = document.createElement('canvas')
-    const cropW = video.videoWidth
-    const cropH = Math.round(video.videoHeight * 0.4)
-    const cropY = Math.round(video.videoHeight * 0.3)
-    canvas.width = cropW
-    canvas.height = cropH
-    canvas.getContext('2d')!.drawImage(video, 0, cropY, cropW, cropH, 0, 0, cropW, cropH)
+    // Capture the targeting box region (center 80% wide, middle 30% tall)
+    const raw = document.createElement('canvas')
+    const sx = Math.round(video.videoWidth * 0.10)
+    const sy = Math.round(video.videoHeight * 0.35)
+    const sw = Math.round(video.videoWidth * 0.80)
+    const sh = Math.round(video.videoHeight * 0.30)
+    raw.width = sw
+    raw.height = sh
+    raw.getContext('2d')!.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh)
+
+    const processed = preprocessForOCR(raw)
 
     try {
-      const { data: { text } } = await ocrWorker.current.recognize(canvas)
+      const { data: { text } } = await ocrWorker.current.recognize(processed)
       const cleaned = text.replace(/[^A-Z0-9]/gi, '').toUpperCase().trim()
       if (cleaned) {
         setSku(cleaned)
@@ -175,7 +199,20 @@ export default function AddItemPage() {
       setScanResult('miss')
     } finally {
       setScanState('idle')
-      setTimeout(() => setScanResult(null), 2000)
+      setTimeout(() => setScanResult(null), 2500)
+    }
+  }
+
+  async function scanSku() {
+    if (!cameraActive) {
+      await startCamera()
+      setScanState('aiming')
+      aimTimerRef.current = setTimeout(runOCR, 2000)
+      return
+    }
+    if (scanState === 'idle') {
+      setScanState('aiming')
+      aimTimerRef.current = setTimeout(runOCR, 2000)
     }
   }
 
@@ -319,6 +356,26 @@ export default function AddItemPage() {
                 muted
                 className={`w-full h-full object-cover transition-opacity duration-75 ${justCaptured ? 'opacity-0' : 'opacity-100'}`}
               />
+              {/* SKU targeting overlay */}
+              {(scanState === 'aiming' || scanState === 'loading' || scanState === 'scanning') && (
+                <div className="absolute inset-0 pointer-events-none">
+                  {/* Dim top */}
+                  <div className="absolute top-0 left-0 right-0 bg-black/50" style={{ height: '35%' }} />
+                  {/* Dim bottom */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50" style={{ height: '35%' }} />
+                  {/* Dim left */}
+                  <div className="absolute bg-black/50" style={{ top: '35%', bottom: '35%', left: 0, width: '10%' }} />
+                  {/* Dim right */}
+                  <div className="absolute bg-black/50" style={{ top: '35%', bottom: '35%', right: 0, width: '10%' }} />
+                  {/* Target border */}
+                  <div className={`absolute border-2 transition-colors ${scanState === 'scanning' ? 'border-green-400' : 'border-amber-400'}`}
+                    style={{ top: '35%', bottom: '35%', left: '10%', right: '10%' }} />
+                  {/* Hint text */}
+                  <p className="absolute text-white text-xs text-center w-full" style={{ top: '28%' }}>
+                    {scanState === 'scanning' ? 'Reading...' : scanState === 'loading' ? 'Loading OCR...' : 'Position SKU sticker in box'}
+                  </p>
+                </div>
+              )}
               {uploading && (
                 <div className="absolute bottom-2 left-0 right-0 flex justify-center">
                   <span className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">Uploading...</span>
@@ -444,10 +501,8 @@ export default function AddItemPage() {
               className="shrink-0 h-[52px] px-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-amber-500 disabled:opacity-50 flex flex-col items-center justify-center gap-0.5"
               aria-label="Scan SKU sticker"
             >
-              {scanState === 'loading' ? (
+              {scanState === 'loading' || scanState === 'scanning' ? (
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-              ) : scanState === 'scanning' ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-pulse"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12h8M12 8v8"/></svg>
               ) : scanResult === 'ok' ? (
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               ) : scanResult === 'miss' ? (
@@ -459,7 +514,7 @@ export default function AddItemPage() {
                 </svg>
               )}
               <span className="text-[10px] leading-none">
-                {scanState === 'loading' ? 'Loading' : scanState === 'scanning' ? 'Reading' : !cameraActive ? 'Camera' : 'Scan'}
+                {scanState === 'aiming' ? 'Hold...' : scanState === 'loading' || scanState === 'scanning' ? 'Reading' : !cameraActive ? 'Camera' : 'Scan'}
               </span>
             </button>
           </div>
@@ -467,9 +522,6 @@ export default function AddItemPage() {
             <p className="mt-1.5 text-xs text-gray-500">
               Saves as <span className="text-amber-400 font-mono">{sku.trim()} {todayMMDDYY()}</span>
             </p>
-          )}
-          {!cameraActive && scanState === 'idle' && !sku && (
-            <p className="mt-1.5 text-xs text-gray-500">Tap Scan to open camera and read the SKU sticker</p>
           )}
         </div>
       </div>
