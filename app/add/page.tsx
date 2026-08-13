@@ -7,6 +7,19 @@ import { uploadPhoto } from '@/lib/cloudinary'
 
 const DRAFT_KEY = 'stagr-add-draft'
 
+interface SheetLink {
+  row: number
+  title: string
+  cost: number
+}
+
+interface SheetResult {
+  row: number
+  item: string
+  cost: string | number
+  datePurchased: string
+}
+
 function todayMMDDYY(): string {
   const d = new Date()
   const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -39,6 +52,11 @@ export default function AddItemPage() {
   const [sku, setSku] = useState('')
   const [photos, setPhotos] = useState<Photo[]>([])
   const [condition, setCondition] = useState<'new' | 'used'>('used')
+  const [sheetLinked, setSheetLinked] = useState<SheetLink | null>(null)
+  const [sheetSearchOpen, setSheetSearchOpen] = useState(false)
+  const [sheetQuery, setSheetQuery] = useState('')
+  const [sheetResults, setSheetResults] = useState<SheetResult[] | null>(null)
+  const [sheetSearching, setSheetSearching] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraError, setCameraError] = useState('')
@@ -54,6 +72,7 @@ export default function AddItemPage() {
       if (draft.sku) setSku(draft.sku)
       if (draft.photos) setPhotos(draft.photos)
       if (draft.condition) setCondition(draft.condition as 'new' | 'used')
+      if (draft.sheetLinked) setSheetLinked(draft.sheetLinked)
     }
     setDraftLoaded(true)
     startCamera()
@@ -63,8 +82,8 @@ export default function AddItemPage() {
   // Save draft whenever form changes
   useEffect(() => {
     if (!draftLoaded) return
-    saveDraft({ sku, photos, condition })
-  }, [sku, photos, condition, draftLoaded])
+    saveDraft({ sku, photos, condition, sheetLinked })
+  }, [sku, photos, condition, sheetLinked, draftLoaded])
 
   // Attach stream to video element when camera becomes active
   useEffect(() => {
@@ -143,6 +162,29 @@ export default function AddItemPage() {
     } catch { /* best-effort */ }
   }
 
+  async function searchSheet() {
+    if (!sheetQuery.trim()) return
+    setSheetSearching(true)
+    setSheetResults(null)
+    try {
+      const res = await fetch('/api/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'searchUnlisted', query: sheetQuery }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        setSheetResults([])
+      } else {
+        setSheetResults(data.results || [])
+      }
+    } catch {
+      setSheetResults([])
+    } finally {
+      setSheetSearching(false)
+    }
+  }
+
   async function handleClear() {
     stopCamera()
     await Promise.all(
@@ -157,6 +199,10 @@ export default function AddItemPage() {
     setSku('')
     setPhotos([])
     setCondition('used')
+    setSheetLinked(null)
+    setSheetSearchOpen(false)
+    setSheetQuery('')
+    setSheetResults(null)
     setError('')
     clearDraft()
   }
@@ -167,7 +213,14 @@ export default function AddItemPage() {
     setSaving(true)
     stopCamera()
     clearDraft()
-    addItem({ sku: `${sku.trim()} ${todayMMDDYY()}`, photos, condition })
+    addItem({
+      sku: `${sku.trim()} ${todayMMDDYY()}`,
+      photos,
+      condition,
+      sheetRow: sheetLinked?.row,
+      sheetTitle: sheetLinked?.title,
+      sheetCost: sheetLinked?.cost,
+    })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
   }
@@ -337,6 +390,96 @@ export default function AddItemPage() {
             <p className="mt-1.5 text-xs text-gray-500">
               Saves as <span className="text-amber-400 font-mono">{sku.trim()} {todayMMDDYY()}</span>
             </p>
+          )}
+        </div>
+
+        {/* Sheet Link */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm text-gray-400">Inventory Link</label>
+            {sheetLinked && (
+              <button
+                type="button"
+                onClick={() => { setSheetLinked(null); setSheetSearchOpen(false); setSheetQuery(''); setSheetResults(null) }}
+                className="text-xs text-gray-500 underline"
+              >
+                Change
+              </button>
+            )}
+          </div>
+
+          {sheetLinked ? (
+            <div className="px-3 py-2.5 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <p className="text-sm text-green-400 font-medium">{sheetLinked.title}</p>
+              <p className="text-xs text-gray-500 mt-0.5">Cost: ${sheetLinked.cost.toFixed(2)}</p>
+            </div>
+          ) : (
+            <div>
+              {!sheetSearchOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setSheetSearchOpen(true)}
+                  className="w-full h-[44px] bg-[#1a1a1a] border border-dashed border-[#2a2a2a] rounded-lg text-sm text-gray-500 active:opacity-70"
+                >
+                  + Link to inventory sheet
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Brand or name..."
+                      value={sheetQuery}
+                      onChange={e => setSheetQuery(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && searchSheet()}
+                      className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 h-[44px] placeholder:text-gray-600"
+                    />
+                    <button
+                      type="button"
+                      onClick={searchSheet}
+                      disabled={sheetSearching || !sheetQuery.trim()}
+                      className="h-[44px] px-4 bg-[#1a1a1a] border border-[#2a2a2a] text-amber-500 text-sm font-semibold rounded-lg disabled:opacity-40"
+                    >
+                      {sheetSearching ? '…' : 'Search'}
+                    </button>
+                  </div>
+
+                  {sheetResults !== null && (
+                    sheetResults.length === 0 ? (
+                      <p className="text-xs text-gray-600 text-center py-2">No results found</p>
+                    ) : (
+                      <div className="space-y-1 max-h-52 overflow-y-auto">
+                        {sheetResults.map(r => (
+                          <button
+                            key={r.row}
+                            type="button"
+                            onClick={() => {
+                              setSheetLinked({ row: r.row, title: r.item, cost: parseFloat(String(r.cost)) || 0 })
+                              setSheetResults(null)
+                              setSheetSearchOpen(false)
+                            }}
+                            className="w-full text-left px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg active:border-amber-500/50 transition-colors"
+                          >
+                            <p className="text-sm text-white font-medium">{r.item}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              Cost: ${parseFloat(String(r.cost)).toFixed(2)} · {r.datePurchased}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => { setSheetSearchOpen(false); setSheetQuery(''); setSheetResults(null) }}
+                    className="text-xs text-gray-600 underline"
+                  >
+                    Skip
+                  </button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

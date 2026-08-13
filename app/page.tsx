@@ -12,6 +12,7 @@ export default function QueuePage() {
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null)
   const [clearing, setClearing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [filter, setFilter] = useState('')
 
   const itemsWithPhotos = items.filter(i => i.photos.length > 0)
   const totalPhotos = itemsWithPhotos.reduce((sum, i) => sum + i.photos.length, 0)
@@ -44,10 +45,17 @@ export default function QueuePage() {
     setClearing(false)
   }
 
-  // Sort newest first
+  // Sort newest first, then apply text filter
   const sorted = [...items].sort(
     (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
   )
+  const q = filter.trim().toLowerCase()
+  const filtered = q
+    ? sorted.filter(i =>
+        i.sku.toLowerCase().includes(q) ||
+        (i.sheetTitle || '').toLowerCase().includes(q)
+      )
+    : sorted
 
   return (
     <main className="px-4 pt-6">
@@ -142,13 +150,28 @@ export default function QueuePage() {
         <div className="flex items-center gap-2 mb-3">
           <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Queue</h2>
           <span className="text-xs bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full">
-            {items.length}
+            {q ? `${filtered.length}/${items.length}` : items.length}
           </span>
         </div>
-        {sorted.length === 0 ? (
+
+        {items.length > 0 && (
+          <div className="mb-3">
+            <input
+              type="text"
+              placeholder="Filter by SKU or name..."
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm px-4 h-[44px] rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-gray-600"
+            />
+          </div>
+        )}
+
+        {items.length === 0 ? (
           <p className="text-sm text-gray-600 py-4">No items yet. Tap + to add one.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-gray-600 py-4">No items match &ldquo;{filter}&rdquo;.</p>
         ) : (
-          sorted.map(item => <ItemCard key={item.id} item={item} onDelete={deleteItem} />)
+          filtered.map(item => <ItemCard key={item.id} item={item} onDelete={deleteItem} />)
         )}
       </section>
     </main>

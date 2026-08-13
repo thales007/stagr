@@ -45,7 +45,10 @@ export default function ItemCard({ item, onDelete }: ItemCardProps) {
         )}
 
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-base font-mono">{item.sku || <span className="text-gray-500 font-normal">No SKU</span>}</p>
+          <p className="font-bold text-base font-mono truncate">{item.sku || <span className="text-gray-500 font-normal">No SKU</span>}</p>
+          {item.sheetTitle && (
+            <p className="text-xs text-green-400 truncate mt-0.5">{item.sheetTitle}</p>
+          )}
           <div className="flex items-center gap-2 mt-1">
             <span className="text-xs text-gray-500">{item.photos.length} photo{item.photos.length !== 1 ? 's' : ''}</span>
             <span className="text-xs text-gray-600">·</span>
