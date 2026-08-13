@@ -12,6 +12,7 @@ export interface Item {
   sku: string
   dateAdded: string
   photos: Photo[]
+  condition?: 'new' | 'used'
 }
 
 const STORAGE_KEY = 'stagr-items'
@@ -122,12 +123,13 @@ export function useItems() {
     }, 300)
   }, [items, loaded])
 
-  function addItem(data: { sku: string; photos?: Photo[] }) {
+  function addItem(data: { sku: string; photos?: Photo[]; condition?: 'new' | 'used' }) {
     const newItem: Item = {
       id: crypto.randomUUID(),
       sku: data.sku,
       dateAdded: new Date().toISOString(),
       photos: data.photos ?? [],
+      condition: data.condition ?? 'used',
     }
     setItems(prev => [...prev, newItem])
     return newItem

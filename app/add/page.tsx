@@ -38,6 +38,7 @@ export default function AddItemPage() {
 
   const [sku, setSku] = useState('')
   const [photos, setPhotos] = useState<Photo[]>([])
+  const [condition, setCondition] = useState<'new' | 'used'>('used')
   const [uploading, setUploading] = useState(false)
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraError, setCameraError] = useState('')
@@ -52,6 +53,7 @@ export default function AddItemPage() {
     if (draft) {
       if (draft.sku) setSku(draft.sku)
       if (draft.photos) setPhotos(draft.photos)
+      if (draft.condition) setCondition(draft.condition as 'new' | 'used')
     }
     setDraftLoaded(true)
     startCamera()
@@ -61,8 +63,8 @@ export default function AddItemPage() {
   // Save draft whenever form changes
   useEffect(() => {
     if (!draftLoaded) return
-    saveDraft({ sku, photos })
-  }, [sku, photos, draftLoaded])
+    saveDraft({ sku, photos, condition })
+  }, [sku, photos, condition, draftLoaded])
 
   // Attach stream to video element when camera becomes active
   useEffect(() => {
@@ -154,6 +156,7 @@ export default function AddItemPage() {
     )
     setSku('')
     setPhotos([])
+    setCondition('used')
     setError('')
     clearDraft()
   }
@@ -164,7 +167,7 @@ export default function AddItemPage() {
     setSaving(true)
     stopCamera()
     clearDraft()
-    addItem({ sku: `${sku.trim()} ${todayMMDDYY()}`, photos })
+    addItem({ sku: `${sku.trim()} ${todayMMDDYY()}`, photos, condition })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
   }
@@ -289,6 +292,35 @@ export default function AddItemPage() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Condition */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1.5">Condition</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setCondition('used')}
+              className={`flex-1 h-[44px] rounded-lg border font-medium text-sm transition-colors ${
+                condition === 'used'
+                  ? 'border-amber-500 text-amber-500 bg-amber-500/10'
+                  : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+              }`}
+            >
+              Used
+            </button>
+            <button
+              type="button"
+              onClick={() => setCondition('new')}
+              className={`flex-1 h-[44px] rounded-lg border font-medium text-sm transition-colors ${
+                condition === 'new'
+                  ? 'border-green-500 text-green-500 bg-green-500/10'
+                  : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+              }`}
+            >
+              New
+            </button>
+          </div>
         </div>
 
         {/* SKU */}
