@@ -565,7 +565,7 @@ export default function AddItemPage() {
             </div>
 
             <div className={cameraActive ? 'space-y-3' : 'hidden'}>
-              <div className="relative w-full aspect-square rounded-lg overflow-hidden bg-black">
+              <div className="relative w-full aspect-square max-h-[40vh] rounded-lg overflow-hidden bg-black">
                 <video
                   ref={videoRef}
                   autoPlay
@@ -752,7 +752,7 @@ export default function AddItemPage() {
         <button
           onClick={handleSave}
           disabled={saving || uploading}
-          className="mt-8 w-full h-[56px] bg-amber-500 text-black font-bold text-base rounded-lg active:opacity-80 disabled:opacity-50 transition-opacity"
+          className="mt-4 w-full h-[56px] bg-amber-500 text-black font-bold text-base rounded-lg active:opacity-80 disabled:opacity-50 transition-opacity"
         >
           {saving ? saveLabel : 'Save Item'}
         </button>
