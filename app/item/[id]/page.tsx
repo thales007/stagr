@@ -118,7 +118,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
       const newMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
       if (cropPinchDistRef.current > 0) {
         const factor = newDist / cropPinchDistRef.current
-        setCropImgScale(s => Math.max(0.3, Math.min(10, s * factor)))
+        setCropImgScale(s => Math.max(0.5, Math.min(5, s * factor)))
         const dx = newMid.x - cropPinchMidRef.current.x
         const dy = newMid.y - cropPinchMidRef.current.y
         setCropImgOffset(o => ({ x: o.x + dx, y: o.y + dy }))

@@ -333,7 +333,7 @@ export default function AddItemPage() {
       const newMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
       if (lastPinchDistRef.current > 0) {
         const factor = newDist / lastPinchDistRef.current
-        setImgScale(s => Math.max(0.3, Math.min(10, s * factor)))
+        setImgScale(s => Math.max(0.5, Math.min(5, s * factor)))
         const dx = newMid.x - lastPinchMidRef.current.x
         const dy = newMid.y - lastPinchMidRef.current.y
         setImgOffset(o => ({ x: o.x + dx, y: o.y + dy }))
