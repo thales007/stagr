@@ -565,7 +565,10 @@ export default function AddItemPage() {
             </div>
 
             <div className={cameraActive ? 'space-y-3' : 'hidden'}>
-              <div className="relative w-full aspect-square max-h-[40vh] rounded-lg overflow-hidden bg-black">
+              <div
+                className={`relative w-full aspect-square max-h-[40vh] rounded-lg overflow-hidden bg-black active:opacity-80 transition-opacity ${uploading ? 'cursor-default' : 'cursor-pointer'}`}
+                onClick={() => { if (!uploading) capturePhoto() }}
+              >
                 <video
                   ref={videoRef}
                   autoPlay
@@ -587,66 +590,40 @@ export default function AddItemPage() {
                     </p>
                   </div>
                 )}
-                {uploading && (
-                  <div className="absolute bottom-2 left-0 right-0 flex justify-center">
+                {uploading ? (
+                  <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none">
                     <span className="bg-black/60 text-white text-xs px-3 py-1 rounded-full">Uploading...</span>
+                  </div>
+                ) : scanState === 'idle' && (
+                  <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none">
+                    <span className="text-white/30 text-[11px]">tap to capture</span>
                   </div>
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
-                <div className="flex gap-2 overflow-x-auto flex-1 pb-1 min-h-[56px]">
-                  {photos.map((photo, i) => (
-                    <div key={photo.publicId} className="relative shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={photo.url} alt=""
-                        className="w-14 h-14 object-cover rounded-lg"
-                        onClick={() => openCrop(i)}
-                      />
-                      {i === tagPhotoIdx && (
-                        <div className="absolute top-0.5 left-0.5 bg-amber-400 text-black text-[9px] font-bold px-1 py-0.5 rounded pointer-events-none">✂</div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => removePhoto(photo)}
-                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {/* Condition toggle — left of shutter */}
-                <div className="shrink-0 flex flex-col gap-1.5 mr-1">
-                  <button
-                    type="button"
-                    onClick={() => setCondition('used')}
-                    className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
-                      condition === 'used'
-                        ? 'border-amber-500 text-amber-500 bg-amber-500/10'
-                        : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
-                    }`}
-                  >Used</button>
-                  <button
-                    type="button"
-                    onClick={() => setCondition('new')}
-                    className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
-                      condition === 'new'
-                        ? 'border-green-500 text-green-500 bg-green-500/10'
-                        : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
-                    }`}
-                  >New</button>
-                </div>
-                <button
-                  type="button"
-                  onClick={capturePhoto}
-                  disabled={uploading}
-                  className="shrink-0 w-16 h-16 rounded-full bg-white border-4 border-gray-300 active:scale-90 transition-transform disabled:opacity-50"
-                  aria-label="Take photo"
-                />
+              <div className="flex gap-2 overflow-x-auto pb-1 min-h-[56px]">
+                {photos.map((photo, i) => (
+                  <div key={photo.publicId} className="relative shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url} alt=""
+                      className="w-14 h-14 object-cover rounded-lg"
+                      onClick={() => openCrop(i)}
+                    />
+                    {i === tagPhotoIdx && (
+                      <div className="absolute top-0.5 left-0.5 bg-amber-400 text-black text-[9px] font-bold px-1 py-0.5 rounded pointer-events-none">✂</div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(photo)}
+                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
 
               {cameraError && <p className="text-xs text-red-400">{cameraError}</p>}
@@ -708,7 +685,29 @@ export default function AddItemPage() {
 
           {/* SKU */}
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">SKU</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-sm text-gray-400">SKU</label>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setCondition('used')}
+                  className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
+                    condition === 'used'
+                      ? 'border-amber-500 text-amber-500 bg-amber-500/10'
+                      : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+                  }`}
+                >Used</button>
+                <button
+                  type="button"
+                  onClick={() => setCondition('new')}
+                  className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
+                    condition === 'new'
+                      ? 'border-green-500 text-green-500 bg-green-500/10'
+                      : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+                  }`}
+                >New</button>
+              </div>
+            </div>
             <div className="flex gap-2">
               <input
                 type="text"
