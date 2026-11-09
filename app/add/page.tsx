@@ -401,6 +401,27 @@ export default function AddItemPage() {
                   </div>
                 ))}
               </div>
+              {/* Condition toggle — left of shutter */}
+              <div className="shrink-0 flex flex-col gap-1.5 mr-1">
+                <button
+                  type="button"
+                  onClick={() => setCondition('used')}
+                  className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
+                    condition === 'used'
+                      ? 'border-amber-500 text-amber-500 bg-amber-500/10'
+                      : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+                  }`}
+                >Used</button>
+                <button
+                  type="button"
+                  onClick={() => setCondition('new')}
+                  className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
+                    condition === 'new'
+                      ? 'border-green-500 text-green-500 bg-green-500/10'
+                      : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+                  }`}
+                >New</button>
+              </div>
               <button
                 type="button"
                 onClick={capturePhoto}
@@ -452,35 +473,6 @@ export default function AddItemPage() {
               )}
             </div>
           )}
-        </div>
-
-        {/* Condition */}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1.5">Condition</label>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => setCondition('used')}
-              className={`flex-1 h-[44px] rounded-lg border font-medium text-sm transition-colors ${
-                condition === 'used'
-                  ? 'border-amber-500 text-amber-500 bg-amber-500/10'
-                  : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
-              }`}
-            >
-              Used
-            </button>
-            <button
-              type="button"
-              onClick={() => setCondition('new')}
-              className={`flex-1 h-[44px] rounded-lg border font-medium text-sm transition-colors ${
-                condition === 'new'
-                  ? 'border-green-500 text-green-500 bg-green-500/10'
-                  : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
-              }`}
-            >
-              New
-            </button>
-          </div>
         </div>
 
         {/* SKU */}
