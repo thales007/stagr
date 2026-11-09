@@ -7,6 +7,11 @@ export interface Photo {
   publicId: string
 }
 
+export interface TagCrop {
+  photoName: string  // e.g. 'photo_2'
+  x1: number; y1: number; x2: number; y2: number  // normalized 0–1
+}
+
 export interface Item {
   id: string
   sku: string
@@ -16,6 +21,8 @@ export interface Item {
   sheetRow?: number
   sheetTitle?: string
   sheetCost?: number
+  tagCrop?: TagCrop | null
+  styleCode?: string | null
 }
 
 const STORAGE_KEY = 'stagr-items'
