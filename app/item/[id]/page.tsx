@@ -143,12 +143,23 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     setPendingCrop(null)
   }
 
+  function squareCrop(x1: number, y1: number, rawX2: number, rawY2: number, r: DOMRect) {
+    const pxW = Math.abs(rawX2 - x1) * r.width
+    const pxH = Math.abs(rawY2 - y1) * r.height
+    const size = Math.min(pxW, pxH)
+    return {
+      x1, y1,
+      x2: x1 + (rawX2 >= x1 ? size / r.width : -size / r.width),
+      y2: y1 + (rawY2 >= y1 ? size / r.height : -size / r.height),
+    }
+  }
+
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!isDragging || !cropRectRef.current) return
     const r = cropRectRef.current
     const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
     const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    setPendingCrop({ x1: dragStart.x, y1: dragStart.y, x2: x, y2: y })
+    setPendingCrop(squareCrop(dragStart.x, dragStart.y, x, y, r))
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
@@ -157,7 +168,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     const r = cropRectRef.current
     const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
     const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    const crop = { x1: dragStart.x, y1: dragStart.y, x2: x, y2: y }
+    const crop = squareCrop(dragStart.x, dragStart.y, x, y, r)
     const big = Math.abs(crop.x2 - crop.x1) > 0.04 && Math.abs(crop.y2 - crop.y1) > 0.04
     setPendingCrop(big ? crop : null)
   }
