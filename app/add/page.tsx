@@ -420,12 +420,26 @@ export default function AddItemPage() {
         }
       }
 
+      // If there's a crop, build a Cloudinary URL that pre-crops to the tag region
+      let photoUrlToScan = scanPhoto.url
+      if (savedTagCrop && tagPhotoIdx !== null) {
+        const { x1, y1, x2, y2 } = savedTagCrop
+        const w = x2 - x1
+        const h = y2 - y1
+        const uploadIdx = scanPhoto.url.indexOf('/upload/')
+        if (uploadIdx !== -1) {
+          const before = scanPhoto.url.substring(0, uploadIdx + 8)
+          const after = scanPhoto.url.substring(uploadIdx + 8)
+          photoUrlToScan = `${before}c_crop,fl_relative,x_${x1.toFixed(4)},y_${y1.toFixed(4)},w_${w.toFixed(4)},h_${h.toFixed(4)}/${after}`
+        }
+      }
+
       setSaveLabel('Scanning…')
       try {
         const res = await fetch('/api/scan-style-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ photoUrl: scanPhoto.url }),
+          body: JSON.stringify({ photoUrl: photoUrlToScan }),
         })
         const data = await res.json()
         if (data.styleCode) styleCode = data.styleCode
