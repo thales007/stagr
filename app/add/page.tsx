@@ -63,11 +63,14 @@ export default function AddItemPage() {
   // Crop state
   const [cropOpen, setCropOpen] = useState(false)
   const [cropPhotoIdx, setCropPhotoIdx] = useState<number | null>(null)
-  const [pendingCrop, setPendingCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const cropContainerRef = useRef<HTMLDivElement>(null)
-  const cropRectRef = useRef<DOMRect | null>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
+  const viewfinderRef = useRef<HTMLDivElement>(null)
+  const [imgScale, setImgScale] = useState(1)
+  const [imgOffset, setImgOffset] = useState({ x: 0, y: 0 })
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const lastPinchDistRef = useRef(0)
+  const lastPinchMidRef = useRef({ x: 0, y: 0 })
   const [tagPhotoIdx, setTagPhotoIdx] = useState<number | null>(null)
   const [savedTagCrop, setSavedTagCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
@@ -299,63 +302,93 @@ export default function AddItemPage() {
   // ── Crop handlers ────────────────────────────────────────────────────────────
   function openCrop(idx: number) {
     setCropPhotoIdx(idx)
-    setPendingCrop(idx === tagPhotoIdx && savedTagCrop ? savedTagCrop : null)
+    setImgScale(1)
+    setImgOffset({ x: 0, y: 0 })
+    pointersRef.current.clear()
     setCropOpen(true)
   }
 
   function closeCrop() {
     setCropOpen(false)
     setCropPhotoIdx(null)
-    setPendingCrop(null)
-    setIsDragging(false)
+    pointersRef.current.clear()
   }
 
-  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    cropRectRef.current = cropContainerRef.current?.getBoundingClientRect() ?? null
-    if (!cropRectRef.current) return
+  function onImgPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.currentTarget.setPointerCapture(e.pointerId)
-    setIsDragging(true)
-    const r = cropRectRef.current
-    const x = (e.clientX - r.left) / r.width
-    const y = (e.clientY - r.top) / r.height
-    setDragStart({ x, y })
-    setPendingCrop(null)
-  }
-
-  function squareCrop(x1: number, y1: number, rawX2: number, rawY2: number, r: DOMRect) {
-    const pxW = Math.abs(rawX2 - x1) * r.width
-    const pxH = Math.abs(rawY2 - y1) * r.height
-    const size = Math.min(pxW, pxH)
-    return {
-      x1, y1,
-      x2: x1 + (rawX2 >= x1 ? size / r.width : -size / r.width),
-      y2: y1 + (rawY2 >= y1 ? size / r.height : -size / r.height),
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointersRef.current.size === 2) {
+      const pts = [...pointersRef.current.values()]
+      lastPinchDistRef.current = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      lastPinchMidRef.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
     }
   }
 
-  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!isDragging || !cropRectRef.current) return
-    const r = cropRectRef.current
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    setPendingCrop(squareCrop(dragStart.x, dragStart.y, x, y, r))
+  function onImgPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!pointersRef.current.has(e.pointerId)) return
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointersRef.current.size === 2) {
+      const pts = [...pointersRef.current.values()]
+      const newDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      const newMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
+      if (lastPinchDistRef.current > 0) {
+        const factor = newDist / lastPinchDistRef.current
+        setImgScale(s => Math.max(0.3, Math.min(10, s * factor)))
+        const dx = newMid.x - lastPinchMidRef.current.x
+        const dy = newMid.y - lastPinchMidRef.current.y
+        setImgOffset(o => ({ x: o.x + dx, y: o.y + dy }))
+      }
+      lastPinchDistRef.current = newDist
+      lastPinchMidRef.current = newMid
+    } else if (pointersRef.current.size === 1) {
+      const prev = [...pointersRef.current.values()][0]
+      const dx = e.clientX - prev.x
+      const dy = e.clientY - prev.y
+      setImgOffset(o => ({ x: o.x + dx, y: o.y + dy }))
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
   }
 
-  function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    if (!isDragging || !cropRectRef.current) return
-    setIsDragging(false)
-    const r = cropRectRef.current
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    const crop = squareCrop(dragStart.x, dragStart.y, x, y, r)
-    const big = Math.abs(crop.x2 - crop.x1) > 0.04 && Math.abs(crop.y2 - crop.y1) > 0.04
-    setPendingCrop(big ? crop : null)
+  function onImgPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) lastPinchDistRef.current = 0
+  }
+
+  function computeCropRect() {
+    const containerEl = cropContainerRef.current
+    const img = imgRef.current
+    const vf = viewfinderRef.current
+    if (!containerEl || !img || !vf) return null
+    const r = containerEl.getBoundingClientRect()
+    const v = vf.getBoundingClientRect()
+    const cW = r.width, cH = r.height
+    const natW = img.naturalWidth, natH = img.naturalHeight
+    if (!natW || !natH) return null
+    const base = Math.min(cW / natW, cH / natH)
+    const dW = natW * base, dH = natH * base
+    const iL = (cW - dW) / 2, iT = (cH - dH) / 2
+    const s = imgScale, ox = imgOffset.x, oy = imgOffset.y
+    function toImg(sx: number, sy: number) {
+      const cx = (sx - r.left - cW / 2 - ox) / s + cW / 2
+      const cy = (sy - r.top - cH / 2 - oy) / s + cH / 2
+      return { x: (cx - iL) / dW, y: (cy - iT) / dH }
+    }
+    const tl = toImg(v.left, v.top)
+    const br = toImg(v.right, v.bottom)
+    return {
+      x1: Math.max(0, Math.min(1, tl.x)),
+      y1: Math.max(0, Math.min(1, tl.y)),
+      x2: Math.max(0, Math.min(1, br.x)),
+      y2: Math.max(0, Math.min(1, br.y)),
+    }
   }
 
   function saveCrop() {
-    if (cropPhotoIdx === null || !pendingCrop) return
+    if (cropPhotoIdx === null) return
+    const rect = computeCropRect()
+    if (!rect) return
     setTagPhotoIdx(cropPhotoIdx)
-    setSavedTagCrop(pendingCrop)
+    setSavedTagCrop(rect)
     closeCrop()
   }
 
@@ -364,12 +397,6 @@ export default function AddItemPage() {
     setSavedTagCrop(null)
     closeCrop()
   }
-
-  // Computed crop selection percentages for overlay
-  const selLeft   = pendingCrop ? Math.min(pendingCrop.x1, pendingCrop.x2) * 100 : 0
-  const selTop    = pendingCrop ? Math.min(pendingCrop.y1, pendingCrop.y2) * 100 : 0
-  const selWidth  = pendingCrop ? Math.abs(pendingCrop.x2 - pendingCrop.x1) * 100 : 0
-  const selHeight = pendingCrop ? Math.abs(pendingCrop.y2 - pendingCrop.y1) * 100 : 0
 
   // ── Save ─────────────────────────────────────────────────────────────────────
   async function handleSave() {
@@ -428,59 +455,62 @@ export default function AddItemPage() {
       {cropOpen && cropPhotoIdx !== null && photos[cropPhotoIdx] && (
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 pt-safe pt-4 pb-3 shrink-0">
+          <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
             <button onClick={closeCrop} className="text-gray-400 text-sm min-w-[60px]">Cancel</button>
-            <span className="text-xs text-gray-500">Drag to crop the tag label</span>
-            <button
-              onClick={saveCrop}
-              disabled={!pendingCrop}
-              className="text-amber-400 text-sm font-semibold min-w-[60px] text-right disabled:opacity-30"
-            >Save</button>
+            <span className="text-xs text-gray-500">Pinch &amp; drag to frame the tag</span>
+            <button onClick={saveCrop} className="text-amber-400 text-sm font-semibold min-w-[60px] text-right">Save</button>
           </div>
 
-          {/* Crop image */}
+          {/* Image + fixed viewfinder */}
           <div
             ref={cropContainerRef}
             className="relative flex-1 overflow-hidden select-none touch-none"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
+            onPointerDown={onImgPointerDown}
+            onPointerMove={onImgPointerMove}
+            onPointerUp={onImgPointerUp}
+            onPointerCancel={onImgPointerUp}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              ref={imgRef}
               src={photos[cropPhotoIdx].url}
               alt=""
-              className="w-full h-full object-contain pointer-events-none"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
               draggable={false}
+              style={{
+                transform: `translate(${imgOffset.x}px, ${imgOffset.y}px) scale(${imgScale})`,
+                transformOrigin: 'center center',
+              }}
             />
-            {pendingCrop && (
-              <>
-                {/* Dark overlay — four sides */}
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute bg-black/60" style={{ top: 0, left: 0, right: 0, height: `${selTop}%` }} />
-                  <div className="absolute bg-black/60" style={{ bottom: 0, left: 0, right: 0, top: `${selTop + selHeight}%` }} />
-                  <div className="absolute bg-black/60" style={{ top: `${selTop}%`, height: `${selHeight}%`, left: 0, width: `${selLeft}%` }} />
-                  <div className="absolute bg-black/60" style={{ top: `${selTop}%`, height: `${selHeight}%`, right: 0, left: `${selLeft + selWidth}%` }} />
-                  {/* Selection border */}
-                  <div className="absolute border-2 border-amber-400" style={{ top: `${selTop}%`, left: `${selLeft}%`, width: `${selWidth}%`, height: `${selHeight}%` }} />
-                </div>
-              </>
-            )}
+            {/* Fixed viewfinder — box-shadow dims everything outside */}
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <div
+                ref={viewfinderRef}
+                className="border-2 border-amber-400 relative"
+                style={{
+                  width: '60vmin',
+                  height: '60vmin',
+                  boxShadow: '0 0 0 9999px rgba(0,0,0,0.65)',
+                }}
+              >
+                <div className="absolute top-0 left-0 w-5 h-5 border-t-[3px] border-l-[3px] border-amber-400 -translate-x-px -translate-y-px" />
+                <div className="absolute top-0 right-0 w-5 h-5 border-t-[3px] border-r-[3px] border-amber-400 translate-x-px -translate-y-px" />
+                <div className="absolute bottom-0 left-0 w-5 h-5 border-b-[3px] border-l-[3px] border-amber-400 -translate-x-px translate-y-px" />
+                <div className="absolute bottom-0 right-0 w-5 h-5 border-b-[3px] border-r-[3px] border-amber-400 translate-x-px translate-y-px" />
+              </div>
+            </div>
           </div>
 
-          {/* Footer buttons */}
-          <div className="flex gap-3 px-4 pb-safe pb-6 pt-3 shrink-0">
+          {/* Footer */}
+          <div className="flex gap-3 px-4 pb-6 pt-3 shrink-0">
             {tagPhotoIdx !== null && (
-              <button
-                onClick={removeCrop}
-                className="flex-1 h-[48px] border border-red-500/40 text-red-400 rounded-lg text-sm"
-              >Remove Tag</button>
+              <button onClick={removeCrop} className="flex-1 h-[48px] border border-red-500/40 text-red-400 rounded-lg text-sm">
+                Remove Tag
+              </button>
             )}
-            <button
-              onClick={saveCrop}
-              disabled={!pendingCrop}
-              className="flex-1 h-[48px] bg-amber-500 text-black font-bold rounded-lg text-sm disabled:opacity-40"
-            >Save Crop</button>
+            <button onClick={saveCrop} className="flex-1 h-[48px] bg-amber-500 text-black font-bold rounded-lg text-sm">
+              Save Crop
+            </button>
           </div>
         </div>
       )}

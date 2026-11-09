@@ -26,15 +26,16 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
   const { items, deleteItem, markListed, updateItem } = useItems()
   const [downloading, setDownloading] = useState(false)
   const [listing, setListing] = useState(false)
-  const [scanning, setScanning] = useState(false)
-
   // Crop state
   const [cropPhotoIdx, setCropPhotoIdx] = useState<number | null>(null)
-  const [pendingCrop, setPendingCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const cropContainerRef = useRef<HTMLDivElement>(null)
-  const cropRectRef = useRef<DOMRect | null>(null)
+  const cropImgRef = useRef<HTMLImageElement>(null)
+  const cropViewfinderRef = useRef<HTMLDivElement>(null)
+  const [cropImgScale, setCropImgScale] = useState(1)
+  const [cropImgOffset, setCropImgOffset] = useState({ x: 0, y: 0 })
+  const cropPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map())
+  const cropPinchDistRef = useRef(0)
+  const cropPinchMidRef = useRef({ x: 0, y: 0 })
 
   const foundItem = items.find(i => i.id === id)
 
@@ -84,99 +85,95 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     router.push('/')
   }
 
-  // ── Style code scan ──────────────────────────────────────────────────────────
-  async function handleScanStyleCode() {
-    setScanning(true)
-    let found: string | null = null
-
-    // If a tag crop is set, only scan that photo — it's the one with the tag
-    const tagPhotoName = item.tagCrop?.photoName
-    const photosToScan = tagPhotoName
-      ? item.photos.filter((_, i) => `photo_${i + 1}` === tagPhotoName)
-      : item.photos
-
-    for (const photo of photosToScan) {
-      const res = await fetch('/api/scan-style-code', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photoUrl: photo.url }),
-      })
-      const data = await res.json()
-      if (data.styleCode) { found = data.styleCode; break }
-    }
-    if (found) {
-      updateItem(item.id, { styleCode: found })
-    } else {
-      alert('No style code found.')
-    }
-    setScanning(false)
-  }
 
   // ── Crop handlers ────────────────────────────────────────────────────────────
   function openCrop(idx: number) {
     setCropPhotoIdx(idx)
-    // Pre-fill with existing crop if this photo already has one
-    const photoName = `photo_${idx + 1}`
-    if (item.tagCrop?.photoName === photoName) {
-      setPendingCrop({ x1: item.tagCrop.x1, y1: item.tagCrop.y1, x2: item.tagCrop.x2, y2: item.tagCrop.y2 })
-    } else {
-      setPendingCrop(null)
-    }
+    setCropImgScale(1)
+    setCropImgOffset({ x: 0, y: 0 })
+    cropPointersRef.current.clear()
   }
 
   function closeCrop() {
     setCropPhotoIdx(null)
-    setPendingCrop(null)
-    setIsDragging(false)
+    cropPointersRef.current.clear()
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
-    cropRectRef.current = cropContainerRef.current?.getBoundingClientRect() ?? null
-    if (!cropRectRef.current) return
     e.currentTarget.setPointerCapture(e.pointerId)
-    setIsDragging(true)
-    const r = cropRectRef.current
-    setDragStart({
-      x: Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
-    })
-    setPendingCrop(null)
-  }
-
-  function squareCrop(x1: number, y1: number, rawX2: number, rawY2: number, r: DOMRect) {
-    const pxW = Math.abs(rawX2 - x1) * r.width
-    const pxH = Math.abs(rawY2 - y1) * r.height
-    const size = Math.min(pxW, pxH)
-    return {
-      x1, y1,
-      x2: x1 + (rawX2 >= x1 ? size / r.width : -size / r.width),
-      y2: y1 + (rawY2 >= y1 ? size / r.height : -size / r.height),
+    cropPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (cropPointersRef.current.size === 2) {
+      const pts = [...cropPointersRef.current.values()]
+      cropPinchDistRef.current = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      cropPinchMidRef.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
     }
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
-    if (!isDragging || !cropRectRef.current) return
-    const r = cropRectRef.current
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    setPendingCrop(squareCrop(dragStart.x, dragStart.y, x, y, r))
+    if (!cropPointersRef.current.has(e.pointerId)) return
+    cropPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (cropPointersRef.current.size === 2) {
+      const pts = [...cropPointersRef.current.values()]
+      const newDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+      const newMid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 }
+      if (cropPinchDistRef.current > 0) {
+        const factor = newDist / cropPinchDistRef.current
+        setCropImgScale(s => Math.max(0.3, Math.min(10, s * factor)))
+        const dx = newMid.x - cropPinchMidRef.current.x
+        const dy = newMid.y - cropPinchMidRef.current.y
+        setCropImgOffset(o => ({ x: o.x + dx, y: o.y + dy }))
+      }
+      cropPinchDistRef.current = newDist
+      cropPinchMidRef.current = newMid
+    } else if (cropPointersRef.current.size === 1) {
+      const prev = [...cropPointersRef.current.values()][0]
+      const dx = e.clientX - prev.x
+      const dy = e.clientY - prev.y
+      setCropImgOffset(o => ({ x: o.x + dx, y: o.y + dy }))
+      cropPointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
   }
 
   function handlePointerUp(e: React.PointerEvent<HTMLDivElement>) {
-    if (!isDragging || !cropRectRef.current) return
-    setIsDragging(false)
-    const r = cropRectRef.current
-    const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-    const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-    const crop = squareCrop(dragStart.x, dragStart.y, x, y, r)
-    const big = Math.abs(crop.x2 - crop.x1) > 0.04 && Math.abs(crop.y2 - crop.y1) > 0.04
-    setPendingCrop(big ? crop : null)
+    cropPointersRef.current.delete(e.pointerId)
+    if (cropPointersRef.current.size < 2) cropPinchDistRef.current = 0
+  }
+
+  function computeCropRect() {
+    const containerEl = cropContainerRef.current
+    const img = cropImgRef.current
+    const vf = cropViewfinderRef.current
+    if (!containerEl || !img || !vf) return null
+    const r = containerEl.getBoundingClientRect()
+    const v = vf.getBoundingClientRect()
+    const cW = r.width, cH = r.height
+    const natW = img.naturalWidth, natH = img.naturalHeight
+    if (!natW || !natH) return null
+    const base = Math.min(cW / natW, cH / natH)
+    const dW = natW * base, dH = natH * base
+    const iL = (cW - dW) / 2, iT = (cH - dH) / 2
+    const s = cropImgScale, ox = cropImgOffset.x, oy = cropImgOffset.y
+    function toImg(sx: number, sy: number) {
+      const cx = (sx - r.left - cW / 2 - ox) / s + cW / 2
+      const cy = (sy - r.top - cH / 2 - oy) / s + cH / 2
+      return { x: (cx - iL) / dW, y: (cy - iT) / dH }
+    }
+    const tl = toImg(v.left, v.top)
+    const br = toImg(v.right, v.bottom)
+    return {
+      x1: Math.max(0, Math.min(1, tl.x)),
+      y1: Math.max(0, Math.min(1, tl.y)),
+      x2: Math.max(0, Math.min(1, br.x)),
+      y2: Math.max(0, Math.min(1, br.y)),
+    }
   }
 
   function saveCropToItem() {
-    if (cropPhotoIdx === null || !pendingCrop) return
+    if (cropPhotoIdx === null) return
+    const rect = computeCropRect()
+    if (!rect) return
     updateItem(item.id, {
-      tagCrop: { photoName: `photo_${cropPhotoIdx + 1}`, ...pendingCrop },
+      tagCrop: { photoName: `photo_${cropPhotoIdx + 1}`, ...rect },
     })
     closeCrop()
   }
@@ -185,12 +182,6 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     updateItem(item.id, { tagCrop: null })
     closeCrop()
   }
-
-  // Selection rect (normalized → percent)
-  const selLeft   = pendingCrop ? Math.min(pendingCrop.x1, pendingCrop.x2) * 100 : 0
-  const selTop    = pendingCrop ? Math.min(pendingCrop.y1, pendingCrop.y2) * 100 : 0
-  const selWidth  = pendingCrop ? Math.abs(pendingCrop.x2 - pendingCrop.x1) * 100 : 0
-  const selHeight = pendingCrop ? Math.abs(pendingCrop.y2 - pendingCrop.y1) * 100 : 0
 
   return (
     <>
@@ -301,104 +292,58 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
       {cropPhotoIdx !== null && (
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a] flex-shrink-0">
-            <button onClick={closeCrop} className="text-gray-400 text-sm min-w-[60px]">
-              Cancel
-            </button>
-            <span className="text-xs text-gray-500">Drag to crop the tag label</span>
-            <button
-              onClick={saveCropToItem}
-              disabled={!pendingCrop}
-              className="text-amber-400 text-sm font-semibold min-w-[60px] text-right disabled:opacity-30"
-            >
-              Save
-            </button>
+          <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
+            <button onClick={closeCrop} className="text-gray-400 text-sm min-w-[60px]">Cancel</button>
+            <span className="text-xs text-gray-500">Pinch &amp; drag to frame the tag</span>
+            <button onClick={saveCropToItem} className="text-amber-400 text-sm font-semibold min-w-[60px] text-right">Save</button>
           </div>
 
-          {/* Image + drag area */}
-          <div className="flex-1 flex items-center justify-center overflow-hidden p-4">
-            <div
-              ref={cropContainerRef}
-              className="relative w-full select-none cursor-crosshair"
-              style={{ touchAction: 'none' }}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.photos[cropPhotoIdx].url}
-                alt="crop"
-                className="w-full h-auto max-h-[65vh] object-contain block pointer-events-none"
-                draggable={false}
-              />
-              {/* Dark overlay + selection */}
-              {pendingCrop && (
-                <>
-                  {/* Full dark overlay */}
-                  <div className="absolute inset-0 bg-black/55 pointer-events-none" />
-                  {/* Clear selection window */}
-                  <div
-                    className="absolute border-2 border-amber-400 pointer-events-none"
-                    style={{
-                      left: `${selLeft}%`,
-                      top: `${selTop}%`,
-                      width: `${selWidth}%`,
-                      height: `${selHeight}%`,
-                      mixBlendMode: 'normal',
-                      boxShadow: 'inset 0 0 0 9999px transparent',
-                      background: 'transparent',
-                    }}
-                  />
-                  {/* Punch through — re-draw the visible region on top */}
-                  <div
-                    className="absolute pointer-events-none overflow-hidden border-2 border-amber-400"
-                    style={{
-                      left: `${selLeft}%`,
-                      top: `${selTop}%`,
-                      width: `${selWidth}%`,
-                      height: `${selHeight}%`,
-                    }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.photos[cropPhotoIdx].url}
-                      alt=""
-                      className="absolute pointer-events-none"
-                      draggable={false}
-                      style={{
-                        left: `-${selLeft}%`,
-                        top: `-${selTop}%`,
-                        width: `${100 / (selWidth / 100)}%`,
-                        height: 'auto',
-                      }}
-                    />
-                  </div>
-                </>
-              )}
+          {/* Image + fixed viewfinder */}
+          <div
+            ref={cropContainerRef}
+            className="relative flex-1 overflow-hidden select-none touch-none"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              ref={cropImgRef}
+              src={item.photos[cropPhotoIdx].url}
+              alt="crop"
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+              draggable={false}
+              style={{
+                transform: `translate(${cropImgOffset.x}px, ${cropImgOffset.y}px) scale(${cropImgScale})`,
+                transformOrigin: 'center center',
+              }}
+            />
+            {/* Fixed viewfinder */}
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+              <div
+                ref={cropViewfinderRef}
+                className="border-2 border-amber-400 relative"
+                style={{ width: '60vmin', height: '60vmin', boxShadow: '0 0 0 9999px rgba(0,0,0,0.65)' }}
+              >
+                <div className="absolute top-0 left-0 w-5 h-5 border-t-[3px] border-l-[3px] border-amber-400 -translate-x-px -translate-y-px" />
+                <div className="absolute top-0 right-0 w-5 h-5 border-t-[3px] border-r-[3px] border-amber-400 translate-x-px -translate-y-px" />
+                <div className="absolute bottom-0 left-0 w-5 h-5 border-b-[3px] border-l-[3px] border-amber-400 -translate-x-px translate-y-px" />
+                <div className="absolute bottom-0 right-0 w-5 h-5 border-b-[3px] border-r-[3px] border-amber-400 translate-x-px translate-y-px" />
+              </div>
             </div>
           </div>
 
           {/* Footer */}
-          <div className="flex-shrink-0 px-4 pb-8 pt-3 text-center space-y-3">
-            {pendingCrop ? (
-              <button
-                onClick={() => setPendingCrop(null)}
-                className="text-gray-500 text-sm"
-              >
-                Clear selection
-              </button>
-            ) : (
-              <p className="text-gray-600 text-sm">Drag over the brand tag area</p>
-            )}
+          <div className="flex gap-3 px-4 pb-6 pt-3 shrink-0">
             {item.tagCrop && (
-              <button
-                onClick={removeCrop}
-                className="block mx-auto text-red-400/50 text-xs"
-              >
-                Remove saved crop
+              <button onClick={removeCrop} className="flex-1 h-[48px] border border-red-500/40 text-red-400 rounded-lg text-sm">
+                Remove Tag
               </button>
             )}
+            <button onClick={saveCropToItem} className="flex-1 h-[48px] bg-amber-500 text-black font-bold rounded-lg text-sm">
+              Save Crop
+            </button>
           </div>
         </div>
       )}
