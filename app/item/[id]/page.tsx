@@ -36,9 +36,9 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
   const cropContainerRef = useRef<HTMLDivElement>(null)
   const cropRectRef = useRef<DOMRect | null>(null)
 
-  const item = items.find(i => i.id === id)
+  const foundItem = items.find(i => i.id === id)
 
-  if (!item) {
+  if (!foundItem) {
     return (
       <main className="px-4 pt-6">
         <button onClick={() => router.back()} className="text-gray-400 mb-6 flex items-center gap-2">
@@ -52,6 +52,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     )
   }
 
+  const item = foundItem
   const formattedDate = new Date(item.dateAdded).toLocaleDateString('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
   })
