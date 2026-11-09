@@ -73,6 +73,7 @@ export default function AddItemPage() {
   const lastPinchMidRef = useRef({ x: 0, y: 0 })
   const [tagPhotoIdx, setTagPhotoIdx] = useState<number | null>(null)
   const [savedTagCrop, setSavedTagCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  const [conditionNote, setConditionNote] = useState('Pre-owned. Shows normal signs of wear consistent with regular use. No original box included. Please review all photos carefully for details on wear, tread, uppers, insoles, and soles. The shoes shown are the exact pair you will receive.')
 
   // On mount: check URL params for pre-linked sheet item, else restore draft
   useEffect(() => {
@@ -457,6 +458,7 @@ export default function AddItemPage() {
       sheetCost: sheetLinked?.cost,
       tagCrop,
       styleCode,
+      conditionNote: conditionNote.trim() || null,
     })
     await new Promise(resolve => setTimeout(resolve, 400))
     router.push('/')
@@ -704,7 +706,7 @@ export default function AddItemPage() {
               <div className="flex gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setCondition('used')}
+                  onClick={() => { setCondition('used'); setConditionNote('Pre-owned. Shows normal signs of wear consistent with regular use. No original box included. Please review all photos carefully for details on wear, tread, uppers, insoles, and soles. The shoes shown are the exact pair you will receive.') }}
                   className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
                     condition === 'used'
                       ? 'border-amber-500 text-amber-500 bg-amber-500/10'
@@ -713,7 +715,7 @@ export default function AddItemPage() {
                 >Used</button>
                 <button
                   type="button"
-                  onClick={() => setCondition('new')}
+                  onClick={() => { setCondition('new'); setConditionNote('New without original box.') }}
                   className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
                     condition === 'new'
                       ? 'border-green-500 text-green-500 bg-green-500/10'
@@ -759,6 +761,18 @@ export default function AddItemPage() {
                 Saves as <span className="text-amber-400 font-mono">{sku.trim()} {todayMMDDYY()}</span>
               </p>
             )}
+          </div>
+
+          {/* Condition note */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-1.5">Condition Note</label>
+            <textarea
+              value={conditionNote}
+              onChange={e => setConditionNote(e.target.value)}
+              rows={3}
+              className="w-full bg-[#1a1a1a] border border-[#2a2a2a] text-white text-sm px-4 py-3 rounded-lg focus:outline-none focus:border-amber-500 resize-none placeholder:text-gray-600"
+              placeholder="Describe the condition for the eBay listing…"
+            />
           </div>
         </div>
 
