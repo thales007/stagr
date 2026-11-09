@@ -202,18 +202,9 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
           {item.tagCrop && (
             <p className="text-xs text-amber-500 mt-1">✂ Tag crop set on {item.tagCrop.photoName}</p>
           )}
-          <div className="flex items-center gap-3 mt-2">
-            {item.styleCode ? (
-              <p className="text-xs text-blue-400 font-mono">{item.styleCode}</p>
-            ) : null}
-            <button
-              onClick={handleScanStyleCode}
-              disabled={scanning || item.photos.length === 0}
-              className="text-xs text-blue-400 border border-blue-400/30 rounded px-2 py-0.5 disabled:opacity-40 active:opacity-60"
-            >
-              {scanning ? 'Scanning…' : item.styleCode ? '↺ Re-scan' : '🔍 Scan Style Code'}
-            </button>
-          </div>
+          {item.styleCode && (
+            <p className="text-xs text-blue-400 font-mono mt-1">{item.styleCode}</p>
+          )}
         </div>
 
         {/* Photos */}

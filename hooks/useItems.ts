@@ -133,7 +133,7 @@ export function useItems() {
     }, 300)
   }, [items, loaded])
 
-  function addItem(data: { sku: string; photos?: Photo[]; condition?: 'new' | 'used'; sheetRow?: number; sheetTitle?: string; sheetCost?: number }) {
+  function addItem(data: { sku: string; photos?: Photo[]; condition?: 'new' | 'used'; sheetRow?: number; sheetTitle?: string; sheetCost?: number; tagCrop?: TagCrop | null; styleCode?: string | null }) {
     const newItem: Item = {
       id: crypto.randomUUID(),
       sku: data.sku,
@@ -143,6 +143,8 @@ export function useItems() {
       sheetRow: data.sheetRow,
       sheetTitle: data.sheetTitle,
       sheetCost: data.sheetCost,
+      tagCrop: data.tagCrop ?? null,
+      styleCode: data.styleCode ?? null,
     }
     setItems(prev => [...prev, newItem])
     return newItem
