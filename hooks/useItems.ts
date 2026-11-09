@@ -23,7 +23,6 @@ export interface Item {
   sheetCost?: number
   tagCrop?: TagCrop | null
   styleCode?: string | null
-  conditionNote?: string | null
 }
 
 const STORAGE_KEY = 'stagr-items'
@@ -134,7 +133,7 @@ export function useItems() {
     }, 300)
   }, [items, loaded])
 
-  function addItem(data: { sku: string; photos?: Photo[]; condition?: 'new' | 'used'; sheetRow?: number; sheetTitle?: string; sheetCost?: number; tagCrop?: TagCrop | null; styleCode?: string | null; conditionNote?: string | null }) {
+  function addItem(data: { sku: string; photos?: Photo[]; condition?: 'new' | 'used'; sheetRow?: number; sheetTitle?: string; sheetCost?: number; tagCrop?: TagCrop | null; styleCode?: string | null }) {
     const newItem: Item = {
       id: crypto.randomUUID(),
       sku: data.sku,
@@ -146,7 +145,6 @@ export function useItems() {
       sheetCost: data.sheetCost,
       tagCrop: data.tagCrop ?? null,
       styleCode: data.styleCode ?? null,
-      conditionNote: data.conditionNote ?? null,
     }
     setItems(prev => [...prev, newItem])
     return newItem
