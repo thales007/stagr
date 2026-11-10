@@ -74,6 +74,11 @@ export default function AddItemPage() {
   const [tagPhotoIdx, setTagPhotoIdx] = useState<number | null>(null)
   const [savedTagCrop, setSavedTagCrop] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 
+  const [showQuickAdd, setShowQuickAdd] = useState(false)
+  const [quickAddDesc, setQuickAddDesc] = useState('')
+  const [quickAddCost, setQuickAddCost] = useState('')
+  const [addingToSheet, setAddingToSheet] = useState(false)
+
   // On mount: check URL params for pre-linked sheet item, else restore draft
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -296,7 +301,35 @@ export default function AddItemPage() {
     setError('')
     setTagPhotoIdx(null)
     setSavedTagCrop(null)
+    setShowQuickAdd(false)
+    setQuickAddDesc('')
+    setQuickAddCost('')
     clearDraft()
+  }
+
+  async function handleAddToSheet() {
+    if (!quickAddDesc.trim()) return
+    setAddingToSheet(true)
+    setError('')
+    try {
+      const cost = parseFloat(quickAddCost) || 0
+      const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })
+      const res = await fetch('/api/sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'addRow', item: quickAddDesc.trim(), cost, datePurchased: today }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setSheetLinked({ row: data.row, title: quickAddDesc.trim(), cost })
+      setShowQuickAdd(false)
+      setQuickAddDesc('')
+      setQuickAddCost('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add to sheet')
+    } finally {
+      setAddingToSheet(false)
+    }
   }
 
   // ── Crop handlers ────────────────────────────────────────────────────────────
@@ -544,7 +577,7 @@ export default function AddItemPage() {
         </div>
 
         {/* Pre-linked sheet item */}
-        {sheetLinked && (
+        {sheetLinked ? (
           <div className="mb-4 px-3 py-2.5 bg-blue-500/10 border border-blue-500/30 rounded-lg flex items-center justify-between">
             <div>
               <p className="text-sm text-blue-300 font-medium">{sheetLinked.title}</p>
@@ -557,6 +590,54 @@ export default function AddItemPage() {
             >
               Unlink
             </button>
+          </div>
+        ) : (
+          <div className="mb-4">
+            {!showQuickAdd ? (
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd(true)}
+                className="text-sm text-blue-400 active:opacity-60"
+              >
+                + Add new purchase to spreadsheet
+              </button>
+            ) : (
+              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-3 space-y-2">
+                <p className="text-xs text-gray-400 font-medium">New Purchase</p>
+                <input
+                  type="text"
+                  placeholder="Item description (e.g. Jordan 1 Retro High)"
+                  value={quickAddDesc}
+                  onChange={e => setQuickAddDesc(e.target.value)}
+                  className="w-full bg-[#111] border border-[#2a2a2a] text-white text-sm px-3 rounded-lg focus:outline-none focus:border-blue-500 h-[44px] placeholder:text-gray-600"
+                />
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="Cost paid (e.g. 85)"
+                  value={quickAddCost}
+                  onChange={e => setQuickAddCost(e.target.value)}
+                  className="w-full bg-[#111] border border-[#2a2a2a] text-white text-sm px-3 rounded-lg focus:outline-none focus:border-blue-500 h-[44px] placeholder:text-gray-600"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setShowQuickAdd(false); setQuickAddDesc(''); setQuickAddCost('') }}
+                    className="flex-1 h-[40px] border border-[#2a2a2a] text-gray-400 rounded-lg text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddToSheet}
+                    disabled={!quickAddDesc.trim() || addingToSheet}
+                    className="flex-1 h-[40px] bg-blue-600 text-white font-semibold rounded-lg text-sm disabled:opacity-50 active:opacity-80"
+                  >
+                    {addingToSheet ? 'Adding...' : 'Add to Sheet'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -579,6 +660,31 @@ export default function AddItemPage() {
             </div>
 
             <div className={cameraActive ? 'space-y-3' : 'hidden'}>
+              <div className="flex gap-2 overflow-x-auto pb-1 min-h-[56px]">
+                {photos.map((photo, i) => (
+                  <div key={photo.publicId} className="relative shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={photo.url} alt=""
+                      className="w-14 h-14 object-cover rounded-lg"
+                      onClick={() => openCrop(i)}
+                    />
+                    {i === tagPhotoIdx && (
+                      <div className="absolute top-0.5 left-0.5 bg-amber-400 text-black text-[9px] font-bold px-1 py-0.5 rounded pointer-events-none">✂</div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(photo)}
+                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+
               <div
                 className={`relative w-full aspect-square max-h-[40vh] rounded-lg overflow-hidden bg-black active:opacity-80 transition-opacity ${uploading ? 'cursor-default' : 'cursor-pointer'}`}
                 onClick={() => { if (!uploading) capturePhoto() }}
@@ -613,31 +719,6 @@ export default function AddItemPage() {
                     <span className="text-white/30 text-[11px]">tap to capture</span>
                   </div>
                 )}
-              </div>
-
-              <div className="flex gap-2 overflow-x-auto pb-1 min-h-[56px]">
-                {photos.map((photo, i) => (
-                  <div key={photo.publicId} className="relative shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={photo.url} alt=""
-                      className="w-14 h-14 object-cover rounded-lg"
-                      onClick={() => openCrop(i)}
-                    />
-                    {i === tagPhotoIdx && (
-                      <div className="absolute top-0.5 left-0.5 bg-amber-400 text-black text-[9px] font-bold px-1 py-0.5 rounded pointer-events-none">✂</div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removePhoto(photo)}
-                      className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                      </svg>
-                    </button>
-                  </div>
-                ))}
               </div>
 
               {cameraError && <p className="text-xs text-red-400">{cameraError}</p>}
