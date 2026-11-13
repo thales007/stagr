@@ -77,6 +77,7 @@ export default function AddItemPage() {
   const [showQuickAdd, setShowQuickAdd] = useState(false)
   const [quickAddDesc, setQuickAddDesc] = useState('')
   const [quickAddCost, setQuickAddCost] = useState('')
+  const [quickAddSource, setQuickAddSource] = useState('')
   const [addingToSheet, setAddingToSheet] = useState(false)
 
   // On mount: check URL params for pre-linked sheet item, else restore draft
@@ -304,6 +305,7 @@ export default function AddItemPage() {
     setShowQuickAdd(false)
     setQuickAddDesc('')
     setQuickAddCost('')
+    setQuickAddSource('')
     clearDraft()
   }
 
@@ -317,7 +319,7 @@ export default function AddItemPage() {
       const res = await fetch('/api/sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'addRow', item: quickAddDesc.trim(), cost, datePurchased: today }),
+        body: JSON.stringify({ action: 'addRow', item: quickAddDesc.trim(), cost, datePurchased: today, source: quickAddSource || undefined }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
@@ -325,6 +327,7 @@ export default function AddItemPage() {
       setShowQuickAdd(false)
       setQuickAddDesc('')
       setQuickAddCost('')
+      setQuickAddSource('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add to sheet')
     } finally {
@@ -619,10 +622,26 @@ export default function AddItemPage() {
                   onChange={e => setQuickAddCost(e.target.value)}
                   className="w-full bg-[#111] border border-[#2a2a2a] text-white text-sm px-3 rounded-lg focus:outline-none focus:border-blue-500 h-[44px] placeholder:text-gray-600"
                 />
+                <div className="flex gap-1.5 flex-wrap">
+                  {['Vista', 'Vinted', 'Yard Sale', 'Goodwill'].map(src => (
+                    <button
+                      key={src}
+                      type="button"
+                      onClick={() => setQuickAddSource(s => s === src ? '' : src)}
+                      className={`h-7 px-3 rounded-full border text-xs font-medium transition-colors ${
+                        quickAddSource === src
+                          ? 'border-blue-500 text-blue-400 bg-blue-500/15'
+                          : 'border-[#2a2a2a] text-gray-500 bg-[#111]'
+                      }`}
+                    >
+                      {src}
+                    </button>
+                  ))}
+                </div>
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { setShowQuickAdd(false); setQuickAddDesc(''); setQuickAddCost('') }}
+                    onClick={() => { setShowQuickAdd(false); setQuickAddDesc(''); setQuickAddCost(''); setQuickAddSource('') }}
                     className="flex-1 h-[40px] border border-[#2a2a2a] text-gray-400 rounded-lg text-sm"
                   >
                     Cancel
