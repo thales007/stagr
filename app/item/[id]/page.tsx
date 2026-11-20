@@ -4,6 +4,7 @@ import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { use } from 'react'
 import { useItems, Photo } from '@/hooks/useItems'
+import { uploadPhoto } from '@/lib/cloudinary'
 
 async function downloadPhoto(photo: Photo, filename: string) {
   try {
@@ -26,6 +27,10 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
   const { items, deleteItem, markListed, updateItem } = useItems()
   const [downloading, setDownloading] = useState(false)
   const [listing, setListing] = useState(false)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [editingSku, setEditingSku] = useState(false)
+  const [localSku, setLocalSku] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   // Crop state
   const [cropPhotoIdx, setCropPhotoIdx] = useState<number | null>(null)
   const cropContainerRef = useRef<HTMLDivElement>(null)
@@ -83,6 +88,30 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     if (!window.confirm(`Permanently delete "${item.sku || item.id}" and all its photos right now? This cannot be undone.`)) return
     deleteItem(item.id)
     router.push('/')
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setPhotoUploading(true)
+    try {
+      const newPhotos: Photo[] = []
+      for (const file of files) {
+        const result = await uploadPhoto(file)
+        newPhotos.push(result)
+      }
+      updateItem(item.id, { photos: [...item.photos, ...newPhotos] })
+    } catch { /* best-effort */ }
+    finally {
+      setPhotoUploading(false)
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  function handleSkuSave() {
+    const trimmed = localSku.trim()
+    if (trimmed && trimmed !== item.sku) updateItem(item.id, { sku: trimmed })
+    setEditingSku(false)
   }
 
 
@@ -199,10 +228,54 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Item info */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold font-mono">{item.sku || 'No SKU'}</h1>
-          <p className="text-xs text-gray-500 mt-1">Added {formattedDate}</p>
+          {editingSku ? (
+            <div className="flex gap-2 items-center mb-1">
+              <input
+                type="text"
+                value={localSku}
+                onChange={e => setLocalSku(e.target.value)}
+                onBlur={handleSkuSave}
+                onKeyDown={e => { if (e.key === 'Enter') handleSkuSave(); if (e.key === 'Escape') setEditingSku(false) }}
+                autoFocus
+                className="flex-1 bg-[#1a1a1a] border border-amber-500 text-white text-xl font-bold font-mono px-2 py-1 rounded focus:outline-none"
+              />
+              <button onClick={handleSkuSave} className="text-amber-400 text-sm font-semibold">Done</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mb-0.5">
+              <h1 className="text-2xl font-bold font-mono">{item.sku || 'No SKU'}</h1>
+              <button
+                onClick={() => { setLocalSku(item.sku); setEditingSku(true) }}
+                className="text-gray-600 active:text-gray-400 shrink-0"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+            </div>
+          )}
+          <p className="text-xs text-gray-500 mt-0.5">Added {formattedDate}</p>
+          <div className="flex gap-1.5 mt-2">
+            <button
+              onClick={() => updateItem(item.id, { condition: 'used' })}
+              className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
+                (item.condition ?? 'used') === 'used'
+                  ? 'border-amber-500 text-amber-500 bg-amber-500/10'
+                  : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+              }`}
+            >Used</button>
+            <button
+              onClick={() => updateItem(item.id, { condition: 'new' })}
+              className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors ${
+                (item.condition ?? 'used') === 'new'
+                  ? 'border-green-500 text-green-500 bg-green-500/10'
+                  : 'border-[#2a2a2a] text-gray-500 bg-[#1a1a1a]'
+              }`}
+            >New</button>
+          </div>
           {item.tagCrop && (
-            <p className="text-xs text-amber-500 mt-1">✂ Tag crop set on {item.tagCrop.photoName}</p>
+            <p className="text-xs text-amber-500 mt-1.5">✂ Tag crop set on {item.tagCrop.photoName}</p>
           )}
           {item.styleCode && (
             <p className="text-xs text-blue-400 font-mono mt-1">{item.styleCode}</p>
@@ -210,59 +283,81 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Photos */}
-        {item.photos.length > 0 ? (
-          <div className="mb-6">
-            <button
-              onClick={handleDownloadAll}
-              disabled={downloading}
-              className="w-full h-[48px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center gap-2 text-amber-500 text-sm font-medium mb-3 active:opacity-70 disabled:opacity-50 transition-opacity"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              {downloading
-                ? 'Downloading...'
-                : `Download All ${item.photos.length} Photo${item.photos.length !== 1 ? 's' : ''}`}
-            </button>
+        <div className="mb-6">
+          {item.photos.length > 0 ? (
+            <>
+              <button
+                onClick={handleDownloadAll}
+                disabled={downloading}
+                className="w-full h-[48px] bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg flex items-center justify-center gap-2 text-amber-500 text-sm font-medium mb-3 active:opacity-70 disabled:opacity-50 transition-opacity"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {downloading
+                  ? 'Downloading...'
+                  : `Download All ${item.photos.length} Photo${item.photos.length !== 1 ? 's' : ''}`}
+              </button>
 
-            {/* Photo grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              {item.photos.map((photo, i) => {
-                const photoName = `photo_${i + 1}`
-                const hasCrop = item.tagCrop?.photoName === photoName
-                return (
-                  <div key={photo.publicId} className="relative group">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={photo.url}
-                      alt={item.sku}
-                      className="w-full aspect-square object-cover rounded-lg"
-                    />
-                    {/* Crop badge */}
-                    {hasCrop && (
-                      <div className="absolute top-1.5 left-1.5 bg-amber-400 text-black text-[10px] font-bold px-1.5 py-0.5 rounded pointer-events-none">
-                        ✂ tag
-                      </div>
-                    )}
-                    {/* Crop button */}
-                    <button
-                      onClick={() => openCrop(i)}
-                      className="absolute top-1.5 right-1.5 bg-black/70 text-amber-400 text-[10px] font-semibold px-1.5 py-0.5 rounded active:opacity-70"
-                    >
-                      ✂ crop
-                    </button>
-                  </div>
-                )
-              })}
+              {/* Photo grid */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+                {item.photos.map((photo, i) => {
+                  const photoName = `photo_${i + 1}`
+                  const hasCrop = item.tagCrop?.photoName === photoName
+                  return (
+                    <div key={photo.publicId} className="relative group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={item.sku}
+                        className="w-full aspect-square object-cover rounded-lg"
+                      />
+                      {hasCrop && (
+                        <div className="absolute top-1.5 left-1.5 bg-amber-400 text-black text-[10px] font-bold px-1.5 py-0.5 rounded pointer-events-none">
+                          ✂ tag
+                        </div>
+                      )}
+                      <button
+                        onClick={() => openCrop(i)}
+                        className="absolute top-1.5 right-1.5 bg-black/70 text-amber-400 text-[10px] font-semibold px-1.5 py-0.5 rounded active:opacity-70"
+                      >
+                        ✂ crop
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="py-8 text-center border border-dashed border-[#2a2a2a] rounded-lg mb-3">
+              <p className="text-sm text-gray-600">No photos on this item.</p>
             </div>
-          </div>
-        ) : (
-          <div className="mb-6 py-10 text-center border border-dashed border-[#2a2a2a] rounded-lg">
-            <p className="text-sm text-gray-600">No photos on this item.</p>
-          </div>
-        )}
+          )}
+
+          {/* Add photos from camera or photo library */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={photoUploading}
+            className="w-full h-[48px] bg-[#1a1a1a] border border-dashed border-[#2a2a2a] rounded-lg flex items-center justify-center gap-2 text-gray-400 text-sm active:opacity-70 disabled:opacity-50 transition-opacity"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            {photoUploading ? 'Uploading...' : 'Add Photos'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
+        </div>
 
         {/* Mark Listed */}
         <button
