@@ -49,12 +49,13 @@ async function fetchItemsFromServer(): Promise<{ items: Item[]; trashIds: string
   }
 }
 
-async function pushItemsToServer(items: Item[]) {
+async function pushItemsToServer(items: Item[], trashFilter?: Set<string>) {
   try {
+    const toSync = trashFilter ? items.filter(i => !trashFilter.has(i.id)) : items
     await fetch('/api/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
+      body: JSON.stringify({ items: toSync }),
     })
   } catch {
     // best-effort
@@ -86,6 +87,7 @@ export function useItems() {
   const [loaded, setLoaded] = useState(false)
   const pendingPush = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latestItems = useRef<Item[]>([])
+  const knownTrashIds = useRef<Set<string>>(new Set())
 
   useEffect(() => { latestItems.current = items }, [items])
 
@@ -104,6 +106,7 @@ export function useItems() {
       const serverNorm = normalise(result.items as unknown as Item[])
       const serverIds = new Set(serverNorm.map(i => i.id))
       const trashIdSet = new Set(result.trashIds)
+      knownTrashIds.current = trashIdSet
       // Cloud is authoritative for existing items. Only add items that exist
       // locally but haven't reached the cloud yet (e.g. created offline).
       // Exclude trashed items so extension-triggered soft-deletes aren't re-pushed.
@@ -129,7 +132,7 @@ export function useItems() {
 
     if (pendingPush.current) clearTimeout(pendingPush.current)
     pendingPush.current = setTimeout(() => {
-      pushItemsToServer(latestItems.current)
+      pushItemsToServer(latestItems.current, knownTrashIds.current)
     }, 300)
   }, [items, loaded])
 
@@ -162,7 +165,7 @@ export function useItems() {
       // Write immediately so the queue page sees the change before navigation
       writeLocalStorage(next)
       if (pendingPush.current) clearTimeout(pendingPush.current)
-      pendingPush.current = setTimeout(() => pushItemsToServer(next), 300)
+      pendingPush.current = setTimeout(() => pushItemsToServer(next, knownTrashIds.current), 300)
       return next
     })
   }
@@ -174,6 +177,7 @@ export function useItems() {
       const serverNorm = normalise(result.items as unknown as Item[])
       const serverIds = new Set(serverNorm.map(i => i.id))
       const trashIdSet = new Set(result.trashIds)
+      knownTrashIds.current = trashIdSet
       const localOnly = freshLocal.filter(i => !serverIds.has(i.id) && !trashIdSet.has(i.id))
       const merged = [...serverNorm, ...localOnly]
       setItems(merged)
@@ -187,6 +191,7 @@ export function useItems() {
       clearTimeout(pendingPush.current)
       pendingPush.current = null
     }
+    knownTrashIds.current.add(id)
     try {
       await fetch('/api/soft-delete-item', {
         method: 'POST',

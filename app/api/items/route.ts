@@ -20,7 +20,10 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const { items } = await req.json()
-    await redisSet(ITEMS_KEY, items)
+    const trash = await redisGet<{ id: string }[]>(TRASH_KEY) ?? []
+    const trashIds = new Set(trash.map(i => i.id))
+    const filtered = (items as { id: string }[]).filter(i => !trashIds.has(i.id))
+    await redisSet(ITEMS_KEY, filtered)
     return NextResponse.json({ ok: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
